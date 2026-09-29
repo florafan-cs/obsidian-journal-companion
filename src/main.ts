@@ -1,4 +1,4 @@
-import { Notice, Plugin, TFile, TFolder, moment, normalizePath } from "obsidian";
+import { MarkdownView, Notice, Plugin, TFile, TFolder, moment, normalizePath } from "obsidian";
 import { callClaude } from "./claude";
 import {
   DAILY_REPLY_PROMPT,
@@ -43,6 +43,8 @@ export default class JournalCompanion extends Plugin {
   private lastEdit = new Map<string, number>();
   /** Files currently being replied to, to avoid double replies. */
   private replying = new Set<string>();
+  /** "Reply" buttons added to note headers, keyed by view. */
+  private headerButtons = new Map<MarkdownView, HTMLElement>();
 
   async onload() {
     await this.loadSettings();
@@ -66,6 +68,11 @@ export default class JournalCompanion extends Plugin {
       callback: () => this.summarizeWeekOfActive(),
     });
     this.addCommand({
+      id: "summarize-month-current",
+      name: "Generate or refresh the monthly summary for the current entry's month",
+      callback: () => this.summarizeMonthOfActive(),
+    });
+    this.addCommand({
       id: "catch-up",
       name: "Catch up now: missing replies and summaries",
       callback: () => this.runChecks(true),
@@ -77,11 +84,45 @@ export default class JournalCompanion extends Plugin {
       })
     );
 
+    // A visible "reply" button in the header of every journal note. The
+    // ribbon icon alone was too easy to miss.
+    this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.refreshHeaderButtons()));
+    this.registerEvent(this.app.workspace.on("file-open", () => this.refreshHeaderButtons()));
+    this.registerEvent(this.app.workspace.on("layout-change", () => this.refreshHeaderButtons()));
+
     this.app.workspace.onLayoutReady(() => {
+      this.refreshHeaderButtons();
       window.setTimeout(() => this.runChecks(false), 5000);
     });
     this.registerInterval(window.setInterval(() => this.runChecks(false), CHECK_INTERVAL_MS));
     this.registerInterval(window.setInterval(() => this.checkIdleToday(), IDLE_POLL_MS));
+  }
+
+  onunload() {
+    for (const el of this.headerButtons.values()) el.remove();
+    this.headerButtons.clear();
+  }
+
+  /** Shows the header reply button on journal notes and hides it elsewhere. */
+  refreshHeaderButtons() {
+    const open = new Set<MarkdownView>();
+    for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
+      const view = leaf.view;
+      if (!(view instanceof MarkdownView)) continue;
+      open.add(view);
+      let btn = this.headerButtons.get(view);
+      if (!btn) {
+        btn = view.addAction("heart", "Get a letter from Claude for this entry", () => {
+          if (view.file) this.replyToFile(view.file, false);
+        });
+        this.headerButtons.set(view, btn);
+      }
+      btn.toggle(!!view.file && this.isJournal(view.file));
+    }
+    // Forget views that have been closed.
+    for (const view of [...this.headerButtons.keys()]) {
+      if (!open.has(view)) this.headerButtons.delete(view);
+    }
   }
 
   async loadSettings() {
@@ -182,7 +223,12 @@ export default class JournalCompanion extends Plugin {
 
   async replyToActive(force: boolean) {
     const f = this.app.workspace.getActiveFile();
-    if (!f || !this.isJournal(f)) {
+    if (f) await this.replyToFile(f, force);
+    else new Notice(`Open a journal entry in "${this.settings.journalFolder}" first.`);
+  }
+
+  async replyToFile(f: TFile, force: boolean) {
+    if (!this.isJournal(f)) {
       new Notice(`Open a journal entry in "${this.settings.journalFolder}" first.`);
       return;
     }
@@ -366,6 +412,29 @@ export default class JournalCompanion extends Plugin {
     } catch (e) {
       pending.hide();
       new Notice(`Weekly summary failed: ${(e as Error).message}`, 10000);
+    }
+  }
+
+  async summarizeMonthOfActive() {
+    const f = this.app.workspace.getActiveFile();
+    const all = this.getEntries();
+    const entry = f && all.find((e) => e.file.path === f.path);
+    if (!entry) {
+      new Notice("Open a journal entry first.");
+      return;
+    }
+
+    const key = entry.date.format("YYYY-MM");
+    const entries = all.filter((e) => e.date.format("YYYY-MM") === key);
+    const pending = new Notice(`📖 Summarizing ${key}…`, 0);
+    try {
+      await this.summarizeMonth(key, entries);
+      pending.hide();
+      new Notice(`📖 Monthly summary for ${key} is ready.`);
+      await this.app.workspace.openLinkText(this.summaryPath("Monthly", key), "", true);
+    } catch (e) {
+      pending.hide();
+      new Notice(`Monthly summary failed: ${(e as Error).message}`, 10000);
     }
   }
 

@@ -68,9 +68,10 @@ This plugin is not in the Obsidian community directory yet, so it has to be inst
 
 | Action | How |
 |---|---|
-| Get a letter right after writing | Click the ❤️ ribbon icon, or run **Reply to the current journal entry** |
+| Get a letter right after writing | Click the ♡ button at the top-right of any journal note (or the ♡ icon in the left ribbon, or run **Reply to the current journal entry**) |
 | Rewrite a letter | **Regenerate the reply for the current entry** |
 | Preview this week's summary mid-week | **Generate or refresh the weekly summary for the current entry's week** |
+| Preview this month's summary mid-month | **Generate or refresh the monthly summary for the current entry's month** |
 | Force a catch-up | **Catch up now: missing replies and summaries** |
 
 By default, entries from before today get their letter automatically the next time Obsidian opens. If you'd like today's entry answered once you stop typing, set **Reply to today's entry after N idle minutes** (for example, 30).
