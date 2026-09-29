@@ -15,6 +15,11 @@ export interface JournalCompanionSettings {
   contextDays: number;
   autoSummaries: boolean;
   extraStyle: string;
+  /** Name used in the stats line, e.g. "Flora". Empty = "you". */
+  yourName: string;
+  showStats: boolean;
+  /** Active writing time per entry date (YYYY-MM-DD → milliseconds). */
+  writingTime: Record<string, number>;
 }
 
 export const DEFAULT_SETTINGS: JournalCompanionSettings = {
@@ -29,6 +34,9 @@ export const DEFAULT_SETTINGS: JournalCompanionSettings = {
   contextDays: 2,
   autoSummaries: true,
   extraStyle: "",
+  yourName: "",
+  showStats: true,
+  writingTime: {},
 };
 
 export class CompanionSettingTab extends PluginSettingTab {
@@ -147,6 +155,29 @@ export class CompanionSettingTab extends PluginSettingTab {
       .addTextArea((t) =>
         t.setValue(s.extraStyle).onChange(async (v) => {
           s.extraStyle = v;
+          await save();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Show writing stats")
+      .setDesc(
+        "Start each letter with days journaled, total words, and today's word count, writing time and speed. " +
+          "Time is measured while you type; pauses over 2 minutes don't count."
+      )
+      .addToggle((t) =>
+        t.setValue(s.showStats).onChange(async (v) => {
+          s.showStats = v;
+          await save();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Your name")
+      .setDesc('Used in the stats line, e.g. "Flora has journaled for 30 days". Leave empty for "you".')
+      .addText((t) =>
+        t.setValue(s.yourName).onChange(async (v) => {
+          s.yourName = v.trim();
           await save();
         })
       );

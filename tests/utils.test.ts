@@ -39,3 +39,60 @@ describe("truncate", () => {
     expect(truncate("abcdef", 3)).toBe("abc\n…(truncated)");
   });
 });
+
+import { activeDelta, countWords, formatStatsLine, isMostlyCJK } from "../src/utils";
+
+describe("countWords", () => {
+  it("counts each Chinese character and each English word once", () => {
+    expect(countWords("今天去Costco买水")).toBe(6);
+    expect(countWords("I love kiwi berries!")).toBe(4);
+    expect(countWords("")).toBe(0);
+  });
+  it("treats contractions and hyphenated words as one word", () => {
+    expect(countWords("don't over-think it")).toBe(3);
+  });
+});
+
+describe("isMostlyCJK", () => {
+  it("detects Chinese-led entries, including ones with some English", () => {
+    expect(isMostlyCJK("今天在Costco买了kiwi berry")).toBe(true);
+    expect(isMostlyCJK("Went to Costco and bought 水")).toBe(false);
+  });
+});
+
+describe("activeDelta", () => {
+  const gap = 120_000;
+  it("counts short pauses between keystrokes", () => {
+    expect(activeDelta(1_000, 31_000, gap)).toBe(30_000);
+  });
+  it("ignores the first keystroke and long breaks", () => {
+    expect(activeDelta(undefined, 5_000, gap)).toBe(0);
+    expect(activeDelta(0, 10 * 60_000, gap)).toBe(0);
+  });
+});
+
+describe("formatStatsLine", () => {
+  const base = { name: "Flora", days: 30, totalWords: 12345, words: 820 };
+  it("writes a Chinese line with time and speed", () => {
+    expect(formatStatsLine({ ...base, activeMs: 25 * 60_000, chinese: true })).toBe(
+      "📝 Flora已坚持记录 30 天，累计写下 12,345 字｜今天 820 字，用时 25 分钟，每分钟 33 字"
+    );
+  });
+  it("omits time and speed when writing time wasn't tracked", () => {
+    expect(formatStatsLine({ ...base, chinese: false })).toBe(
+      "📝 Flora has journaled for 30 days, 12,345 words in total | Today: 820 words"
+    );
+  });
+  it("falls back to 'you' without a name", () => {
+    expect(formatStatsLine({ ...base, name: "", days: 1, chinese: false })).toMatch(/^📝 You've journaled for 1 day,/);
+  });
+});
+
+describe("toCallout with stats", () => {
+  it("puts the stats line first and still strips cleanly", () => {
+    const entry = "my day";
+    const withReply = entry + toCallout("Nice!", "t", "📝 stats");
+    expect(withReply).toContain("> 📝 stats\n>\n> Nice!");
+    expect(stripReplies(withReply)).toBe(entry);
+  });
+});

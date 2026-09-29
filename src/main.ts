@@ -1,4 +1,4 @@
-import { MarkdownView, Notice, Plugin, TFile, TFolder, moment, normalizePath } from "obsidian";
+import { MarkdownFileInfo, MarkdownView, Notice, Plugin, TFile, TFolder, moment, normalizePath } from "obsidian";
 import { callClaude } from "./claude";
 import {
   DAILY_REPLY_PROMPT,
@@ -7,7 +7,17 @@ import {
   YEARLY_SUMMARY_PROMPT,
 } from "./prompts";
 import { CompanionSettingTab, DEFAULT_SETTINGS, JournalCompanionSettings } from "./settings";
-import { extractDate, hasReply, stripReplies, toCallout, truncate } from "./utils";
+import {
+  activeDelta,
+  countWords,
+  extractDate,
+  formatStatsLine,
+  hasReply,
+  isMostlyCJK,
+  stripReplies,
+  toCallout,
+  truncate,
+} from "./utils";
 
 // Obsidian re-exports moment, but its typings aren't callable under TS 5.x.
 const mo = moment as unknown as (...args: unknown[]) => moment.Moment;
@@ -15,6 +25,8 @@ const mo = moment as unknown as (...args: unknown[]) => moment.Moment;
 const CHECK_INTERVAL_MS = 30 * 60 * 1000;
 const IDLE_POLL_MS = 60 * 1000;
 const WEEK_KEY = "GGGG-[W]WW"; // ISO week, e.g. 2026-W39
+const TYPING_IDLE_GAP_MS = 2 * 60 * 1000;
+const STATS_SAVE_MS = 30 * 1000;
 
 type SummaryKind = "Weekly" | "Monthly" | "Yearly";
 
@@ -45,6 +57,9 @@ export default class JournalCompanion extends Plugin {
   private replying = new Set<string>();
   /** "Reply" buttons added to note headers, keyed by view. */
   private headerButtons = new Map<MarkdownView, HTMLElement>();
+  /** Last keystroke per journal file, for measuring active writing time. */
+  private lastKeystroke = new Map<string, number>();
+  private statsDirty = false;
 
   async onload() {
     await this.loadSettings();
@@ -84,6 +99,22 @@ export default class JournalCompanion extends Plugin {
       })
     );
 
+    // Measure active writing time: sum the gaps between keystrokes,
+    // ignoring pauses long enough to mean the writer stepped away.
+    this.registerEvent(
+      this.app.workspace.on("editor-change", (_editor, info: MarkdownView | MarkdownFileInfo) => {
+        if (info.file) this.trackTyping(info.file);
+      })
+    );
+    this.registerInterval(
+      window.setInterval(() => {
+        if (this.statsDirty) {
+          this.statsDirty = false;
+          this.saveSettings();
+        }
+      }, STATS_SAVE_MS)
+    );
+
     // A visible "reply" button in the header of every journal note. The
     // ribbon icon alone was too easy to miss.
     this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.refreshHeaderButtons()));
@@ -99,6 +130,7 @@ export default class JournalCompanion extends Plugin {
   }
 
   onunload() {
+    if (this.statsDirty) this.saveSettings();
     for (const el of this.headerButtons.values()) el.remove();
     this.headerButtons.clear();
   }
@@ -125,8 +157,36 @@ export default class JournalCompanion extends Plugin {
     }
   }
 
+  trackTyping(file: TFile) {
+    if (!this.isJournal(file)) return;
+    const date = extractDate(file.basename)!;
+    const now = Date.now();
+    const delta = activeDelta(this.lastKeystroke.get(file.path), now, TYPING_IDLE_GAP_MS);
+    this.lastKeystroke.set(file.path, now);
+    if (delta > 0) {
+      this.settings.writingTime[date] = (this.settings.writingTime[date] ?? 0) + delta;
+      this.statsDirty = true;
+    }
+  }
+
+  /** Stats line for an entry: days journaled and words written up to it. */
+  async statsLineFor(entry: Entry, all: Entry[], text: string): Promise<string> {
+    const upToNow = all.filter((e) => !e.date.isAfter(entry.date, "day"));
+    let totalWords = 0;
+    for (const e of upToNow) totalWords += countWords(await this.readEntry(e));
+    return formatStatsLine({
+      name: this.settings.yourName,
+      days: upToNow.length,
+      totalWords,
+      words: countWords(text),
+      activeMs: this.settings.writingTime[entry.date.format("YYYY-MM-DD")],
+      chinese: isMostlyCJK(text),
+    });
+  }
+
   async loadSettings() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    this.settings.writingTime = { ...(this.settings.writingTime ?? {}) };
   }
 
   async saveSettings() {
@@ -210,10 +270,12 @@ export default class JournalCompanion extends Plugin {
       const reply = await this.ask(this.settings.dailyModel, system, user, 1000);
       if (!reply) return false;
 
+      const stats = this.settings.showStats ? await this.statsLineFor(entry, all, text) : undefined;
+
       // vault.process is atomic, so a concurrent edit can't be overwritten.
       await this.app.vault.process(f, (content) => {
         const base = force ? stripReplies(content) : content.trimEnd();
-        return base + toCallout(reply, mo().format("YYYY-MM-DD HH:mm"));
+        return base + toCallout(reply, mo().format("YYYY-MM-DD HH:mm"), stats);
       });
       return true;
     } finally {

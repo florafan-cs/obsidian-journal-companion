@@ -7,6 +7,7 @@ You write about your day in Obsidian: the small wins, the late-night worries, th
 Then, week by week, the pages add up:
 
 - 💌 **A letter for every entry.** Warm, playful, and specific to your day, never generic praise. Each one ends with a reflective question.
+- 📝 **Your writing, counted.** Every letter opens with how many days you've journaled and how many words you've written in total, plus today's word count, writing time, and speed.
 - 📖 **A look back every week and every month.** How your mood moved, what you got done, the people and worries that kept coming up, and one or two small things to try next.
 - ✨ **A year-in-review.** The story of your year, with its hard seasons and bright ones, and a letter to the person you're becoming.
 
@@ -16,6 +17,8 @@ Your words stay in your own vault as plain Markdown files. Letters and summaries
 
 ```markdown
 > [!ai-reply] 💌 A letter from Claude · 2026-09-25 08:12
+> 📝 You've journaled for 30 days, 12,345 words in total | Today: 420 words in 14 min (30 words/min)
+>
 > You went on that run even though you almost talked yourself out of it.
 > Honestly, arguing with yourself and winning is its own kind of cardio. 🏃‍♀️ ...
 >
@@ -41,6 +44,8 @@ flowchart LR
 **Replies never feed back into the model.** Letters are tagged with a custom callout type (`[!ai-reply]`). Before any entry is sent to the API, `stripReplies()` removes these blocks. This keeps the model from quoting its own earlier letters back to you, and it avoids paying for those tokens again. The logic is pure and unit-tested in `tests/utils.test.ts`.
 
 **Safe writes.** Replies are appended with `vault.process()`, which reads and writes the file atomically, so an edit you're making at the same moment isn't overwritten.
+
+**Measuring writing time without a timer.** There's no start/stop button. The plugin listens to editor changes in journal notes and adds up the gaps between keystrokes, ignoring any pause longer than two minutes as time spent away. Time is stored per entry date, so coming back to an entry later adds to the same day. Word counts treat each Chinese character and each English word as one, which matches how people count mixed-language writing.
 
 **Right-sized models.** Daily letters are short and frequent, so they use a small, fast model (Claude Haiku). Summaries run a few times a month and need more synthesis, so they use a larger model (Claude Sonnet). Both are configurable.
 
