@@ -1,17 +1,25 @@
 # Journal Companion
 
-An Obsidian plugin that reads your daily journal and writes back.
+**A pen pal who reads every page of your journal, and writes back.**
 
-- **Daily letters.** When you finish an entry, a short and specific note of encouragement is appended to it as a callout. It responds to what you actually wrote, not generic praise.
-- **Weekly, monthly, and yearly summaries.** When each period ends, the plugin writes a summary: your emotional arc, what you got done, recurring themes, patterns worth noticing, and small suggestions for the next period.
-- **Catch-up.** If your laptop was closed for a few days, anything missed is filled in the next time Obsidian opens.
+You write about your day in Obsidian: the small wins, the late-night worries, the cat who wouldn't get off your keyboard. The next morning there's a letter waiting at the bottom of the page. It's from a friend who actually read what you wrote. They cheer you on, make you laugh, see the thing from an angle you hadn't thought of, and leave you with one question worth sitting with.
 
-It runs on the [Claude API](https://docs.claude.com) and replies in whatever language you journal in. Chinese, English, and mixed entries all work.
+Then, week by week, the pages add up:
+
+- 💌 **A letter for every entry.** Warm, playful, and specific to your day, never generic praise. Each one ends with a reflective question.
+- 📖 **A look back every week and every month.** How your mood moved, what you got done, the people and worries that kept coming up, and one or two small things to try next.
+- ✨ **A year-in-review.** The story of your year, with its hard seasons and bright ones, and a letter to the person you're becoming.
+
+Over time you end up with a book of your own life, and a companion who knows it as well as you do.
+
+Your words stay in your own vault as plain Markdown files. Letters and summaries are written by [Claude](https://docs.claude.com), in whatever language you journal in: Chinese, English, or a mix of both. If you'd like the letters funnier, gentler, or shorter, just say so in one line in the settings.
 
 ```markdown
 > [!ai-reply] 💌 A letter from Claude · 2026-09-25 08:12
-> You went on that run even though you said you almost talked yourself out
-> of it. That's the part worth noticing, more than the distance. ...
+> You went on that run even though you almost talked yourself out of it.
+> Honestly, arguing with yourself and winning is its own kind of cardio. 🏃‍♀️ ...
+>
+> 🤔 What was the voice that almost kept you home, and what did it want to protect?
 ```
 
 ## How it works

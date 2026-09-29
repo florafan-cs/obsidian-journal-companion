@@ -3,7 +3,7 @@
   "name": "Journal Companion",
   "version": "0.3.0",
   "minAppVersion": "1.4.0",
-  "description": "A warm AI reply to every journal entry, plus automatic weekly, monthly, and yearly summaries.",
+  "description": "A pen pal who reads your journal and writes back: a warm letter for every entry, plus weekly, monthly, and yearly look-backs.",
   "author": "Flora Fan",
   "authorUrl": "https://github.com/florafan-cs",
   "isDesktopOnly": false
