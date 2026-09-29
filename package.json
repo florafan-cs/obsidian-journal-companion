@@ -1,6 +1,6 @@
 {
   "name": "obsidian-journal-companion",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Obsidian plugin: a warm AI reply to every journal entry, plus automatic weekly, monthly, and yearly summaries (Claude API).",
   "main": "main.js",
   "scripts": {

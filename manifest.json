@@ -1,7 +1,7 @@
 {
   "id": "journal-companion",
   "name": "Journal Companion",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "minAppVersion": "1.4.0",
   "description": "A warm AI reply to every journal entry, plus automatic weekly, monthly, and yearly summaries.",
   "author": "Flora Fan",
