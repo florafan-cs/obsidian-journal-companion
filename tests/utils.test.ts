@@ -96,3 +96,41 @@ describe("toCallout with stats", () => {
     expect(stripReplies(withReply)).toBe(entry);
   });
 });
+
+import { PINNED_PLACEHOLDER, buildMemoryNote, splitMemory, stripFrontmatter } from "../src/utils";
+
+describe("memory note", () => {
+  const ai = "## People & pets\n- Mochi: the cat\n\n## Goals & projects\n- Summer internship";
+
+  it("round-trips pinned notes and the AI part", () => {
+    const note = buildMemoryNote("- I'm allergic to cats but love them anyway", ai, "2026-10-07 23:30");
+    const { pinned, aiPart } = splitMemory(note);
+    expect(pinned).toBe("- I'm allergic to cats but love them anyway");
+    expect(aiPart).toBe(ai);
+  });
+
+  it("treats the placeholder as no pinned notes", () => {
+    const note = buildMemoryNote("", ai, "t");
+    expect(note).toContain(PINNED_PLACEHOLDER);
+    expect(splitMemory(note).pinned).toBe("");
+  });
+
+  it("never lets the model overwrite the pinned section", () => {
+    const sneaky = "## 📌 Pinned\n- model-written pin\n\n" + ai;
+    const note = buildMemoryNote("- real pin", sneaky, "t");
+    const { pinned, aiPart } = splitMemory(note);
+    expect(pinned).toBe("- real pin");
+    expect(aiPart).toBe(ai);
+    expect(note).not.toContain("model-written pin");
+  });
+
+  it("keeps edits the writer makes to the AI part", () => {
+    const edited = buildMemoryNote("", ai, "t").replace("the cat", "the best cat");
+    expect(splitMemory(edited).aiPart).toContain("the best cat");
+  });
+
+  it("strips frontmatter", () => {
+    expect(stripFrontmatter("---\na: 1\n---\nbody")).toBe("body");
+    expect(stripFrontmatter("no frontmatter")).toBe("no frontmatter");
+  });
+});

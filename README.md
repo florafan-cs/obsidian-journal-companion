@@ -7,6 +7,7 @@ You write about your day in Obsidian: the small wins, the late-night worries, th
 Then, week by week, the pages add up:
 
 - 💌 **A letter for every entry.** Warm, playful, and specific to your day, never generic praise. Each one ends with a reflective question.
+- 🧠 **A friend who remembers.** A memory note keeps track of the people, pets, goals, and worries in your life, and grows a little every week. Letters draw on it, so they understand that "she" is your sister and that you've been thinking about this decision for a month. You can edit the note any time, and anything you pin there is never changed by the AI.
 - 📝 **Your writing, counted.** Every letter opens with how many days you've journaled and how many words you've written in total, plus today's word count, writing time, and speed.
 - 📖 **A look back every week and every month.** How your mood moved, what you got done, the people and worries that kept coming up, and one or two small things to try next.
 - ✨ **A year-in-review.** The story of your year, with its hard seasons and bright ones, and a letter to the person you're becoming.
@@ -44,6 +45,8 @@ flowchart LR
 **Replies never feed back into the model.** Letters are tagged with a custom callout type (`[!ai-reply]`). Before any entry is sent to the API, `stripReplies()` removes these blocks. This keeps the model from quoting its own earlier letters back to you, and it avoids paying for those tokens again. The logic is pure and unit-tested in `tests/utils.test.ts`.
 
 **Safe writes.** Replies are appended with `vault.process()`, which reads and writes the file atomically, so an edit you're making at the same moment isn't overwritten.
+
+**Memory the writer stays in control of.** Letters used to see only the previous two days. Now a memory note (`Summaries/Memory.md`) is built once from every entry, then revised after each weekly summary. The model returns the whole note each time, merging and dropping stale items, so it stays short instead of growing forever. The writer's 📌 Pinned section is split out and reattached by code rather than passed through the model, so the AI can read it but has no way to change it. This is covered by unit tests.
 
 **Measuring writing time without a timer.** There's no start/stop button. The plugin listens to editor changes in journal notes and adds up the gaps between keystrokes, ignoring any pause longer than two minutes as time spent away. Time is stored per entry date, so coming back to an entry later adds to the same day. Word counts treat each Chinese character and each English word as one, which matches how people count mixed-language writing.
 
@@ -85,6 +88,8 @@ This plugin is not in the Obsidian community directory yet, so it has to be inst
 | Rewrite a letter | **Regenerate the reply for the current entry** |
 | Preview this week's summary mid-week | **Generate or refresh the weekly summary for the current entry's week** |
 | Preview this month's summary mid-month | **Generate or refresh the monthly summary for the current entry's month** |
+| See or edit what Claude remembers | **Open the long-term memory note** |
+| Refresh memory now | **Update long-term memory from the last 7 days** |
 | Force a catch-up | **Catch up now: missing replies and summaries** |
 
 By default, entries from before today get their letter automatically the next time Obsidian opens. If you'd like today's entry answered once you stop typing, set **Reply to today's entry after N idle minutes** (for example, 30).

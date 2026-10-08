@@ -128,3 +128,64 @@ export function formatStatsLine(s: EntryStats): string {
   if (minutes > 0) line += ` in ${minutes} min (${speed} words/min)`;
   return line;
 }
+
+// ---------------------------------------------------------------------------
+// Long-term memory note
+// ---------------------------------------------------------------------------
+
+/** Heading of the section the writer owns. The AI never rewrites it. */
+export const PINNED_HEADING = "## 📌 Pinned";
+export const PINNED_PLACEHOLDER = "_Anything you write here is always remembered and never changed by the AI._";
+
+/** Removes a leading YAML frontmatter block, if present. */
+export function stripFrontmatter(text: string): string {
+  return text.replace(/^---\n[\s\S]*?\n---\n?/, "").trim();
+}
+
+/**
+ * Splits a memory note into the writer's pinned section and the AI-maintained
+ * part. The pinned section runs from the "📌 Pinned" heading to the next
+ * level-2 heading; the AI part is every level-2 section after that. Any text
+ * before the first level-2 heading (title, intro) belongs to neither.
+ */
+export function splitMemory(text: string): { pinned: string; aiPart: string } {
+  const lines = stripFrontmatter(text).split("\n");
+  const pinned: string[] = [];
+  const ai: string[] = [];
+  let section: "none" | "pinned" | "ai" = "none";
+
+  for (const line of lines) {
+    if (line.startsWith("## ")) section = line.trim() === PINNED_HEADING ? "pinned" : "ai";
+    if (section === "pinned" && line.trim() !== PINNED_HEADING) pinned.push(line);
+    if (section === "ai") ai.push(line);
+  }
+
+  const pinnedText = pinned.join("\n").trim();
+  return {
+    pinned: pinnedText === PINNED_PLACEHOLDER ? "" : pinnedText,
+    aiPart: ai.join("\n").trim(),
+  };
+}
+
+/** Rebuilds the memory note, always keeping the writer's pinned section intact. */
+export function buildMemoryNote(pinned: string, aiPart: string, updated: string): string {
+  // Defensive: the model must not produce its own pinned section.
+  const cleanAi = splitMemory(`## _\n${aiPart}`).aiPart.replace(/^## _\n?/, "").trim();
+  return [
+    "---",
+    "type: memory",
+    `updated: ${updated}`,
+    "---",
+    "",
+    "# What Claude remembers about you",
+    "",
+    "> Journal Companion keeps this note up to date after each week and uses it when writing your letters. " +
+      "Edit anything you like. The 📌 Pinned section is yours alone: the AI reads it but never changes it.",
+    "",
+    PINNED_HEADING,
+    pinned.trim() || PINNED_PLACEHOLDER,
+    "",
+    cleanAi,
+    "",
+  ].join("\n");
+}

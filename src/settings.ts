@@ -20,6 +20,8 @@ export interface JournalCompanionSettings {
   showStats: boolean;
   /** Active writing time per entry date (YYYY-MM-DD → milliseconds). */
   writingTime: Record<string, number>;
+  useMemory: boolean;
+  memoryPath: string;
 }
 
 export const DEFAULT_SETTINGS: JournalCompanionSettings = {
@@ -37,6 +39,8 @@ export const DEFAULT_SETTINGS: JournalCompanionSettings = {
   yourName: "",
   showStats: true,
   writingTime: {},
+  useMemory: true,
+  memoryPath: "Journal/Summaries/Memory.md",
 };
 
 export class CompanionSettingTab extends PluginSettingTab {
@@ -188,6 +192,30 @@ export class CompanionSettingTab extends PluginSettingTab {
         await save();
       })
     );
+
+    new Setting(containerEl).setName("Long-term memory").setHeading();
+
+    new Setting(containerEl)
+      .setName("Use long-term memory")
+      .setDesc(
+        "Keep a note of the people, goals and worries in your journal, update it after each week, and use it in letters and summaries."
+      )
+      .addToggle((t) =>
+        t.setValue(s.useMemory).onChange(async (v) => {
+          s.useMemory = v;
+          await save();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Memory note")
+      .setDesc("You can open and edit this note any time.")
+      .addText((t) =>
+        t.setValue(s.memoryPath).onChange(async (v) => {
+          s.memoryPath = v.trim();
+          await save();
+        })
+      );
 
     new Setting(containerEl).setName("Weekly / monthly / yearly summaries").setHeading();
 

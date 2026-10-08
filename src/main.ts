@@ -2,6 +2,7 @@ import { MarkdownFileInfo, MarkdownView, Notice, Plugin, TFile, TFolder, moment,
 import { callClaude } from "./claude";
 import {
   DAILY_REPLY_PROMPT,
+  MEMORY_UPDATE_PROMPT,
   MONTHLY_SUMMARY_PROMPT,
   WEEKLY_SUMMARY_PROMPT,
   YEARLY_SUMMARY_PROMPT,
@@ -9,6 +10,9 @@ import {
 import { CompanionSettingTab, DEFAULT_SETTINGS, JournalCompanionSettings } from "./settings";
 import {
   activeDelta,
+  buildMemoryNote,
+  splitMemory,
+  stripFrontmatter,
   countWords,
   extractDate,
   formatStatsLine,
@@ -86,6 +90,16 @@ export default class JournalCompanion extends Plugin {
       id: "summarize-month-current",
       name: "Generate or refresh the monthly summary for the current entry's month",
       callback: () => this.summarizeMonthOfActive(),
+    });
+    this.addCommand({
+      id: "update-memory",
+      name: "Update long-term memory from the last 7 days",
+      callback: () => this.updateMemoryFromRecent(),
+    });
+    this.addCommand({
+      id: "open-memory",
+      name: "Open the long-term memory note",
+      callback: () => this.app.workspace.openLinkText(normalizePath(this.settings.memoryPath), "", true),
     });
     this.addCommand({
       id: "catch-up",
@@ -255,6 +269,8 @@ export default class JournalCompanion extends Plugin {
         .filter((e) => entry.date.diff(e.date, "days") <= 7);
 
       let user = "";
+      const memory = await this.readMemory();
+      if (memory) user += `[Long-term memory about the writer — background only]\n${truncate(memory, 4000)}\n\n`;
       if (previous.length) {
         user += "[Earlier entries — background only]\n";
         for (const p of previous) {
@@ -390,12 +406,14 @@ export default class JournalCompanion extends Plugin {
     return s;
   }
 
-  async summarizeWeek(key: string, entries: Entry[]) {
+  async summarizeWeek(key: string, entries: Entry[]): Promise<string> {
     const start = entries[0].date.clone().startOf("isoWeek");
     const end = start.clone().endOf("isoWeek");
     const range = `${start.format("MMM D")} – ${end.format("MMM D")}`;
 
-    const user = `${entries.length} entries from ${key} (${range}):\n\n${await this.entriesBlock(entries)}`;
+    const memory = await this.readMemory();
+    const context = memory ? `[Long-term memory about the writer — background only]\n${truncate(memory, 4000)}\n\n` : "";
+    const user = `${context}${entries.length} entries from ${key} (${range}):\n\n${await this.entriesBlock(entries)}`;
     const body = await this.ask(this.settings.summaryModel, WEEKLY_SUMMARY_PROMPT, user, 2500);
     const links = entries.map((e) => `- [[${e.file.basename}]]`).join("\n");
 
@@ -404,6 +422,7 @@ export default class JournalCompanion extends Plugin {
       this.frontmatter("weekly-summary", key, entries.length) +
         `# Week ${key} (${range})\n\n${body}\n\n---\n### Entries this week\n${links}\n`
     );
+    return body;
   }
 
   async summarizeMonth(key: string, entries: Entry[]) {
@@ -412,6 +431,8 @@ export default class JournalCompanion extends Plugin {
     const prevFile = this.app.vault.getAbstractFileByPath(this.summaryPath("Monthly", prevKey));
 
     let user = "";
+    const memory = await this.readMemory();
+    if (memory) user += `[Long-term memory about the writer — background only]\n${truncate(memory, 4000)}\n\n`;
     if (prevFile instanceof TFile) {
       user += `[Last month's summary — for comparison only]\n${truncate(await this.app.vault.cachedRead(prevFile), 3000)}\n\n`;
     }
@@ -501,6 +522,72 @@ export default class JournalCompanion extends Plugin {
   }
 
   // ---------------------------------------------------------------------------
+  // Long-term memory
+  // ---------------------------------------------------------------------------
+
+  memoryFile(): TFile | null {
+    const f = this.app.vault.getAbstractFileByPath(normalizePath(this.settings.memoryPath));
+    return f instanceof TFile ? f : null;
+  }
+
+  /** Memory text for prompts (pinned notes + AI part), or "" if unused or missing. */
+  async readMemory(): Promise<string> {
+    if (!this.settings.useMemory) return "";
+    const f = this.memoryFile();
+    if (!f) return "";
+    const { pinned, aiPart } = splitMemory(await this.app.vault.cachedRead(f));
+    return [pinned && `Pinned by the writer:\n${pinned}`, aiPart].filter(Boolean).join("\n\n");
+  }
+
+  /**
+   * Rewrites the AI-maintained part of the memory note from new material.
+   * The writer's pinned section is carried over by code, never by the model.
+   */
+  async updateMemory(material: string) {
+    const f = this.memoryFile();
+    const { pinned, aiPart } = f ? splitMemory(await this.app.vault.read(f)) : { pinned: "", aiPart: "" };
+
+    const user =
+      `[Current memory]\n${aiPart || "(empty — this is the first time)"}\n\n` +
+      `[Pinned by the writer — treat as true]\n${pinned || "(none)"}\n\n` +
+      `[New material]\n${material}`;
+    const updated = await this.ask(this.settings.summaryModel, MEMORY_UPDATE_PROMPT, user, 2000);
+    if (!updated) return;
+
+    const path = normalizePath(this.settings.memoryPath);
+    await this.writeSummary(path, buildMemoryNote(pinned, updated, mo().format("YYYY-MM-DD HH:mm")));
+  }
+
+  /** First run: build the memory from every entry so far (most recent 60). */
+  async bootstrapMemory(all: Entry[]) {
+    const recent = all.slice(-60);
+    let material = `${recent.length} journal entries, oldest first:\n\n`;
+    for (const e of recent) {
+      material += `--- ${e.date.format("YYYY-MM-DD ddd")} ---\n${truncate(await this.readEntry(e), 1500)}\n\n`;
+    }
+    await this.updateMemory(material);
+  }
+
+  async updateMemoryFromRecent() {
+    const cutoff = mo().startOf("day").subtract(7, "days");
+    const recent = this.getEntries().filter((e) => !e.date.isBefore(cutoff));
+    if (!recent.length) {
+      new Notice("No entries in the last 7 days.");
+      return;
+    }
+    const pending = new Notice("🧠 Updating memory…", 0);
+    try {
+      await this.updateMemory(`Recent entries:\n\n${await this.entriesBlock(recent)}`);
+      pending.hide();
+      new Notice("🧠 Memory updated.");
+      await this.app.workspace.openLinkText(normalizePath(this.settings.memoryPath), "", true);
+    } catch (e) {
+      pending.hide();
+      new Notice(`Memory update failed: ${(e as Error).message}`, 10000);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Scheduler / catch-up
   // ---------------------------------------------------------------------------
 
@@ -525,6 +612,12 @@ export default class JournalCompanion extends Plugin {
       const all = this.getEntries();
       const today = mo().startOf("day");
 
+      // Build the memory once, before anything that uses it.
+      if (this.settings.useMemory && all.length && !this.memoryFile()) {
+        await this.bootstrapMemory(all);
+        done.push("memory");
+      }
+
       if (this.settings.autoReplyPastDays) {
         for (const e of all) {
           if (!e.date.isBefore(today)) continue;
@@ -537,8 +630,11 @@ export default class JournalCompanion extends Plugin {
         for (const [key, entries] of groupBy(all, (e) => e.date.format(WEEK_KEY))) {
           const weekEnd = entries[0].date.clone().endOf("isoWeek");
           if (!weekEnd.isBefore(today) || this.summaryExists("Weekly", key)) continue;
-          await this.summarizeWeek(key, entries);
+          const summary = await this.summarizeWeek(key, entries);
           done.push(`week ${key}`);
+          if (this.settings.useMemory) {
+            await this.updateMemory(`Weekly summary for ${key}:\n${summary}\n\nEntries:\n\n${await this.entriesBlock(entries)}`);
+          }
         }
 
         for (const [key, entries] of groupBy(all, (e) => e.date.format("YYYY-MM"))) {
