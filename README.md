@@ -119,7 +119,6 @@ To try your changes, symlink or copy the repo into `<vault>/.obsidian/plugins/jo
 ## Roadmap
 
 - Store the API key in the OS keychain instead of `data.json`
-- A "memory" note of recurring people and goals, so letters can refer to longer-term context
 - Mood tracking across summaries, charted in a dashboard note
 - Support for other LLM providers behind the same interface
 
