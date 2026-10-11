@@ -4,7 +4,6 @@ import {
   Notice,
   Plugin,
   TFile,
-  TFolder,
   moment,
   normalizePath,
   parseYaml,
@@ -21,6 +20,8 @@ import {
 import { CompanionSettingTab, DEFAULT_SETTINGS, JournalCompanionSettings } from "./settings";
 import {
   Mood,
+  isInside,
+  monthFolderTarget,
   MoodRow,
   activeDelta,
   moodSection,
@@ -141,6 +142,14 @@ export default class JournalCompanion extends Plugin {
       },
     });
     this.addCommand({
+      id: "organize-by-month",
+      name: "Organize past entries into monthly folders now",
+      callback: async () => {
+        const n = await this.organizeEntries();
+        new Notice(n ? `📁 Moved ${n} ${n === 1 ? "entry" : "entries"} into monthly folders.` : "📁 Everything is already in place.");
+      },
+    });
+    this.addCommand({
       id: "catch-up",
       name: "Catch up now: missing replies and summaries",
       callback: () => this.runChecks(true),
@@ -256,25 +265,46 @@ export default class JournalCompanion extends Plugin {
   // ---------------------------------------------------------------------------
 
   isJournal(f: TFile): boolean {
+    // Entries may sit directly in the journal folder or in any subfolder
+    // (e.g. monthly folders), but never in the summaries folder.
     return (
       f.extension === "md" &&
-      f.parent?.path === normalizePath(this.settings.journalFolder) &&
+      isInside(f.path, normalizePath(this.settings.journalFolder)) &&
+      !isInside(f.path, normalizePath(this.settings.summaryFolder)) &&
       extractDate(f.basename) !== null
     );
   }
 
-  /** All journal entries in the configured folder, oldest first. */
+  /** All journal entries in the journal folder and its subfolders, oldest first. */
   getEntries(): Entry[] {
-    const folder = this.app.vault.getAbstractFileByPath(normalizePath(this.settings.journalFolder));
-    if (!(folder instanceof TFolder)) return [];
-
     const entries: Entry[] = [];
-    for (const child of folder.children) {
-      if (!(child instanceof TFile) || !this.isJournal(child)) continue;
-      const date = mo(extractDate(child.basename), "YYYY-MM-DD", true);
-      if (date.isValid()) entries.push({ file: child, date });
+    for (const file of this.app.vault.getMarkdownFiles()) {
+      if (!this.isJournal(file)) continue;
+      const date = mo(extractDate(file.basename), "YYYY-MM-DD", true);
+      if (date.isValid()) entries.push({ file, date });
     }
     return entries.sort((a, b) => a.date.valueOf() - b.date.valueOf());
+  }
+
+  /**
+   * Moves entries from before today into their month folder. Uses
+   * fileManager.renameFile so links to the entry are updated. Never touches
+   * today's entry, and never overwrites an existing file.
+   */
+  async organizeEntries(): Promise<number> {
+    const today = mo().startOf("day");
+    let moved = 0;
+    for (const e of this.getEntries()) {
+      if (!e.date.isBefore(today)) continue;
+      const target = normalizePath(
+        monthFolderTarget(this.settings.journalFolder, e.date.format(this.settings.monthFolderFormat), e.file.name)
+      );
+      if (e.file.path === target || this.app.vault.getAbstractFileByPath(target)) continue;
+      await this.ensureFolder(target.substring(0, target.lastIndexOf("/")));
+      await this.app.fileManager.renameFile(e.file, target);
+      moved++;
+    }
+    return moved;
   }
 
   /** Entry text with any previous AI replies removed. */
@@ -778,6 +808,12 @@ export default class JournalCompanion extends Plugin {
       }
 
       await this.refreshMoodNote();
+
+      // Last, so every step above has finished with the files where they were.
+      if (this.settings.organizeByMonth) {
+        const moved = await this.organizeEntries();
+        if (moved) done.push(`moved ${moved} into month folders`);
+      }
 
       if (done.length) new Notice(`✨ Done: ${done.join(", ")}`, 8000);
       else if (manual) new Notice("Everything is up to date.");

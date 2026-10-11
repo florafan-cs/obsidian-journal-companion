@@ -286,3 +286,21 @@ export function moodSection(rows: MoodRow[], chinese: boolean): string {
 
   return `${chart}\n\n${summary.replace("：", chinese ? "：" : ": ")}\n\n${table}`;
 }
+
+// ---------------------------------------------------------------------------
+// Folders
+// ---------------------------------------------------------------------------
+
+/** True if `path` is inside `folder` (at any depth). An empty folder means the vault root. */
+export function isInside(path: string, folder: string): boolean {
+  const f = folder.replace(/^\/+|\/+$/g, "");
+  return f === "" ? true : path.startsWith(`${f}/`);
+}
+
+/** Where an entry belongs: `<journal>/<month folder>/<file name>`. */
+export function monthFolderTarget(journalFolder: string, monthFolder: string, fileName: string): string {
+  return [journalFolder, monthFolder, fileName]
+    .map((p) => p.replace(/^\/+|\/+$/g, ""))
+    .filter(Boolean)
+    .join("/");
+}

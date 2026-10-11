@@ -190,3 +190,25 @@ describe("moodSection", () => {
     expect(scoreBar(5)).toBe("▇▇▇▇▇");
   });
 });
+
+import { isInside, monthFolderTarget } from "../src/utils";
+
+describe("folders", () => {
+  it("matches files inside a folder at any depth, and nothing else", () => {
+    expect(isInside("Journal/2026-09-22 Tue..md", "Journal")).toBe(true);
+    expect(isInside("Journal/2026-09 9月/2026-09-22 Tue..md", "Journal")).toBe(true);
+    expect(isInside("Journal/Summaries/Memory.md", "Journal/Summaries")).toBe(true);
+    expect(isInside("Journals/2026-09-22.md", "Journal")).toBe(false);
+    expect(isInside("Journal", "Journal")).toBe(false);
+  });
+
+  it("treats an empty folder as the vault root", () => {
+    expect(isInside("2026-09-22.md", "")).toBe(true);
+  });
+
+  it("builds the month folder path, tolerating stray slashes", () => {
+    expect(monthFolderTarget("Journal", "2026-09 9月", "2026-09-22 Tue..md")).toBe("Journal/2026-09 9月/2026-09-22 Tue..md");
+    expect(monthFolderTarget("Journal/", "/2026/09/", "x.md")).toBe("Journal/2026/09/x.md");
+    expect(monthFolderTarget("", "2026-09", "x.md")).toBe("2026-09/x.md");
+  });
+});

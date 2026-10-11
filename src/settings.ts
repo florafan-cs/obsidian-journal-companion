@@ -23,6 +23,9 @@ export interface JournalCompanionSettings {
   useMemory: boolean;
   memoryPath: string;
   trackMood: boolean;
+  organizeByMonth: boolean;
+  /** Moment.js format for month folder names. */
+  monthFolderFormat: string;
 }
 
 export const DEFAULT_SETTINGS: JournalCompanionSettings = {
@@ -43,6 +46,8 @@ export const DEFAULT_SETTINGS: JournalCompanionSettings = {
   useMemory: true,
   memoryPath: "Journal/Summaries/Memory.md",
   trackMood: true,
+  organizeByMonth: true,
+  monthFolderFormat: "YYYY-MM M[月]",
 };
 
 export class CompanionSettingTab extends PluginSettingTab {
@@ -116,6 +121,32 @@ export class CompanionSettingTab extends PluginSettingTab {
         await save();
       })
     );
+
+    new Setting(containerEl)
+      .setName("Organize entries into monthly folders")
+      .setDesc(
+        "Move past entries into a folder per month inside the journal folder. Today's entry stays put, so " +
+          "\"Open today's daily note\" keeps finding it. Links to moved entries are updated automatically."
+      )
+      .addToggle((t) =>
+        t.setValue(s.organizeByMonth).onChange(async (v) => {
+          s.organizeByMonth = v;
+          await save();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Month folder name")
+      .setDesc(
+        'Moment.js format. Default "YYYY-MM M[月]" gives "2026-09 9月" and sorts in order. ' +
+          'Other examples: "YYYY-MM", "YYYY/MM" (year then month), "M[月]-YYYY".'
+      )
+      .addText((t) =>
+        t.setValue(s.monthFolderFormat).onChange(async (v) => {
+          s.monthFolderFormat = v.trim() || "YYYY-MM";
+          await save();
+        })
+      );
 
     new Setting(containerEl).setName("Daily replies").setHeading();
 

@@ -9,6 +9,7 @@ Then, week by week, the pages add up:
 - 💌 **A letter for every entry.** Warm, playful, and specific to your day, never generic praise. Each one ends with a reflective question.
 - 🧠 **A friend who remembers.** A memory note keeps track of the people, pets, goals, and worries in your life, and grows a little every week. Letters draw on it, so they understand that "she" is your sister and that you've been thinking about this decision for a month. You can edit the note any time, and anything you pin there is never changed by the AI.
 - 📈 **Your mood, charted.** Each entry gets a mood and energy score (1–5) and a few feeling words, saved as properties you can correct. A 30-day chart lives in `Summaries/Mood.md`, and every weekly and monthly look-back includes its own.
+- 📁 **A tidy shelf.** Past entries are filed into a folder per month (`2026-09 9月`, `2026-10 10月`, …), with links kept intact.
 - 📝 **Your writing, counted.** Every letter opens with how many days you've journaled and how many words you've written in total, plus today's word count, writing time, and speed.
 - 📖 **A look back every week and every month.** How your mood moved, what you got done, the people and worries that kept coming up, and one or two small things to try next.
 - ✨ **A year-in-review.** The story of your year, with its hard seasons and bright ones, and a letter to the person you're becoming.
@@ -95,11 +96,14 @@ This plugin is not in the Obsidian community directory yet, so it has to be inst
 | Refresh memory now | **Update long-term memory from the last 7 days** |
 | See your mood trend | **Open the mood & energy chart (last 30 days)** |
 | Fix a score that feels off | Edit `mood` / `energy` in the entry's properties, or run **Re-score mood and energy for the current entry** |
+| File entries into month folders now | **Organize past entries into monthly folders now** |
 | Force a catch-up | **Catch up now: missing replies and summaries** |
 
 By default, entries from before today get their letter automatically the next time Obsidian opens. If you'd like today's entry answered once you stop typing, set **Reply to today's entry after N idle minutes** (for example, 30).
 
-Entry filenames must start with `YYYY-MM-DD`. Anything after the date is ignored, so `2026-09-22.md` and `2026-09-22 Tue..md` both work.
+Entry filenames must start with `YYYY-MM-DD`. Anything after the date is ignored, so `2026-09-22.md` and `2026-09-22 Tue..md` both work. Entries can live directly in the journal folder or in any subfolder of it.
+
+With **Organize entries into monthly folders** on (the default), entries from before today are moved into a month folder whose name you can configure with a Moment.js format, for example `YYYY-MM M[月]` → `2026-09 9月`. Today's entry is left in place so Obsidian's "Open today's daily note" still finds it. Moves go through Obsidian's file manager, so links to the entry are updated.
 
 ## Cost
 
