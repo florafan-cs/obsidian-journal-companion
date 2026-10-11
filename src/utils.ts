@@ -189,3 +189,100 @@ export function buildMemoryNote(pinned: string, aiPart: string, updated: string)
     "",
   ].join("\n");
 }
+
+// ---------------------------------------------------------------------------
+// Mood & energy
+// ---------------------------------------------------------------------------
+
+export interface Mood {
+  /** 1 (very low) to 5 (great). */
+  mood: number;
+  /** 1 (drained) to 5 (energized). */
+  energy: number;
+  /** 1–3 short feeling words, in the journal's language. */
+  emotions: string[];
+}
+
+const isScore = (n: unknown): n is number => Number.isInteger(n) && (n as number) >= 1 && (n as number) <= 5;
+
+/** Validates mood data from any source (model output or frontmatter). */
+export function toMood(value: unknown): Mood | null {
+  if (!value || typeof value !== "object") return null;
+  const v = value as Record<string, unknown>;
+  const mood = Number(v.mood);
+  const energy = Number(v.energy);
+  if (!isScore(mood) || !isScore(energy)) return null;
+  const emotions = Array.isArray(v.emotions)
+    ? v.emotions.map((e) => String(e).trim()).filter(Boolean).slice(0, 3)
+    : [];
+  return { mood, energy, emotions };
+}
+
+/** Extracts mood data from a model reply, tolerating prose or code fences around the JSON. */
+export function parseMoodJson(text: string): Mood | null {
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) return null;
+  try {
+    return toMood(JSON.parse(match[0]));
+  } catch {
+    return null;
+  }
+}
+
+const MOOD_EMOJI = ["", "😞", "😕", "😐", "🙂", "😄"];
+
+export const moodEmoji = (n: number) => MOOD_EMOJI[n] ?? "";
+
+/** A five-cell text bar, e.g. 3 → "▇▇▇░░". Renders anywhere, unlike charts. */
+export const scoreBar = (n: number) => "▇".repeat(n) + "░".repeat(5 - n);
+
+export interface MoodRow extends Mood {
+  /** Short x-axis label, e.g. "9/22". */
+  label: string;
+  /** Longer label for the table, e.g. "Mon 9/22". */
+  day: string;
+}
+
+const avg = (ns: number[]) => Math.round((ns.reduce((a, b) => a + b, 0) / ns.length) * 10) / 10;
+
+/**
+ * Markdown block with a Mermaid chart (energy as bars, mood as a line), a
+ * one-line average, and a per-day table that still reads well if Mermaid
+ * doesn't render.
+ */
+export function moodSection(rows: MoodRow[], chinese: boolean): string {
+  if (!rows.length) return "";
+  const labels = rows.map((r) => `"${r.label}"`).join(", ");
+  const moods = rows.map((r) => r.mood).join(", ");
+  const energies = rows.map((r) => r.energy).join(", ");
+
+  const t = chinese
+    ? { avg: "平均", mood: "心情", energy: "精力", feelings: "情绪", day: "日期", legend: "柱：精力 · 线：心情" }
+    : { avg: "Average", mood: "Mood", energy: "Energy", feelings: "Feelings", day: "Day", legend: "Bars: energy · Line: mood" };
+
+  const chart = [
+    "```mermaid",
+    "xychart-beta",
+    `    x-axis [${labels}]`,
+    `    y-axis "${t.mood} / ${t.energy}" 0 --> 5`,
+    `    bar [${energies}]`,
+    `    line [${moods}]`,
+    "```",
+    `<small>${t.legend}</small>`,
+  ].join("\n");
+
+  const summary =
+    `**${t.avg}**：${t.mood} ${moodEmoji(Math.round(avg(rows.map((r) => r.mood))))} ${avg(rows.map((r) => r.mood))} / 5 · ` +
+    `${t.energy} ⚡ ${avg(rows.map((r) => r.energy))} / 5`;
+
+  const table = [
+    `| ${t.day} | ${t.mood} | ${t.energy} | ${t.feelings} |`,
+    "|---|---|---|---|",
+    ...rows.map(
+      (r) =>
+        `| ${r.day} | ${moodEmoji(r.mood)} ${scoreBar(r.mood)} ${r.mood} | ⚡ ${scoreBar(r.energy)} ${r.energy} | ${r.emotions.join(chinese ? "、" : ", ")} |`
+    ),
+  ].join("\n");
+
+  return `${chart}\n\n${summary.replace("：", chinese ? "：" : ": ")}\n\n${table}`;
+}

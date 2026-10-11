@@ -22,6 +22,7 @@ export interface JournalCompanionSettings {
   writingTime: Record<string, number>;
   useMemory: boolean;
   memoryPath: string;
+  trackMood: boolean;
 }
 
 export const DEFAULT_SETTINGS: JournalCompanionSettings = {
@@ -41,6 +42,7 @@ export const DEFAULT_SETTINGS: JournalCompanionSettings = {
   writingTime: {},
   useMemory: true,
   memoryPath: "Journal/Summaries/Memory.md",
+  trackMood: true,
 };
 
 export class CompanionSettingTab extends PluginSettingTab {
@@ -213,6 +215,21 @@ export class CompanionSettingTab extends PluginSettingTab {
       .addText((t) =>
         t.setValue(s.memoryPath).onChange(async (v) => {
           s.memoryPath = v.trim();
+          await save();
+        })
+      );
+
+    new Setting(containerEl).setName("Mood & energy").setHeading();
+
+    new Setting(containerEl)
+      .setName("Track mood and energy")
+      .setDesc(
+        "Score each entry's mood and energy (1–5) and name its main feelings, saved as properties on the entry. " +
+          "Charts appear in Summaries/Mood.md and in weekly and monthly summaries. You can correct any score by editing the property."
+      )
+      .addToggle((t) =>
+        t.setValue(s.trackMood).onChange(async (v) => {
+          s.trackMood = v;
           await save();
         })
       );

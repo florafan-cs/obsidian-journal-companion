@@ -134,3 +134,59 @@ describe("memory note", () => {
     expect(stripFrontmatter("no frontmatter")).toBe("no frontmatter");
   });
 });
+
+import { moodSection, parseMoodJson, scoreBar, toMood } from "../src/utils";
+
+describe("mood parsing", () => {
+  it("reads plain JSON and JSON wrapped in prose or code fences", () => {
+    const want = { mood: 4, energy: 2, emotions: ["期待", "疲惫"] };
+    expect(parseMoodJson('{"mood":4,"energy":2,"emotions":["期待","疲惫"]}')).toEqual(want);
+    expect(parseMoodJson('Here you go:\n```json\n{"mood": 4, "energy": 2, "emotions": ["期待", "疲惫"]}\n```')).toEqual(want);
+  });
+
+  it("rejects out-of-range or malformed scores", () => {
+    expect(parseMoodJson('{"mood": 6, "energy": 3}')).toBeNull();
+    expect(parseMoodJson('{"mood": 2.5, "energy": 3}')).toBeNull();
+    expect(parseMoodJson("no json here")).toBeNull();
+    expect(parseMoodJson("{not: json}")).toBeNull();
+  });
+
+  it("accepts frontmatter values, including numbers stored as strings", () => {
+    expect(toMood({ mood: "3", energy: 5 })).toEqual({ mood: 3, energy: 5, emotions: [] });
+    expect(toMood({ mood: 3 })).toBeNull();
+  });
+
+  it("keeps at most three feelings", () => {
+    expect(toMood({ mood: 3, energy: 3, emotions: ["a", "b", "c", "d"] })?.emotions).toEqual(["a", "b", "c"]);
+  });
+});
+
+describe("moodSection", () => {
+  const rows = [
+    { label: "9/22", day: "Mon 9/22", mood: 4, energy: 3, emotions: ["满足"] },
+    { label: "9/23", day: "Tue 9/23", mood: 2, energy: 2, emotions: ["焦虑", "疲惫"] },
+  ];
+
+  it("draws a chart with energy bars and a mood line", () => {
+    const md = moodSection(rows, true);
+    expect(md).toContain('x-axis ["9/22", "9/23"]');
+    expect(md).toContain("bar [3, 2]");
+    expect(md).toContain("line [4, 2]");
+  });
+
+  it("includes averages and a readable per-day table", () => {
+    const md = moodSection(rows, true);
+    expect(md).toContain("心情 😐 3 / 5");
+    expect(md).toContain("| Tue 9/23 | 😕 ▇▇░░░ 2 | ⚡ ▇▇░░░ 2 | 焦虑、疲惫 |");
+  });
+
+  it("uses English labels for English journals and is empty with no data", () => {
+    expect(moodSection(rows, false)).toContain("**Average**: Mood");
+    expect(moodSection([], false)).toBe("");
+  });
+
+  it("draws score bars", () => {
+    expect(scoreBar(1)).toBe("▇░░░░");
+    expect(scoreBar(5)).toBe("▇▇▇▇▇");
+  });
+});

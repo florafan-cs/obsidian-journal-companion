@@ -1,15 +1,31 @@
-import { MarkdownFileInfo, MarkdownView, Notice, Plugin, TFile, TFolder, moment, normalizePath } from "obsidian";
+import {
+  MarkdownFileInfo,
+  MarkdownView,
+  Notice,
+  Plugin,
+  TFile,
+  TFolder,
+  moment,
+  normalizePath,
+  parseYaml,
+} from "obsidian";
 import { callClaude } from "./claude";
 import {
   DAILY_REPLY_PROMPT,
   MEMORY_UPDATE_PROMPT,
+  MOOD_PROMPT,
   MONTHLY_SUMMARY_PROMPT,
   WEEKLY_SUMMARY_PROMPT,
   YEARLY_SUMMARY_PROMPT,
 } from "./prompts";
 import { CompanionSettingTab, DEFAULT_SETTINGS, JournalCompanionSettings } from "./settings";
 import {
+  Mood,
+  MoodRow,
   activeDelta,
+  moodSection,
+  parseMoodJson,
+  toMood,
   buildMemoryNote,
   splitMemory,
   stripFrontmatter,
@@ -100,6 +116,29 @@ export default class JournalCompanion extends Plugin {
       id: "open-memory",
       name: "Open the long-term memory note",
       callback: () => this.app.workspace.openLinkText(normalizePath(this.settings.memoryPath), "", true),
+    });
+    this.addCommand({
+      id: "open-mood",
+      name: "Open the mood & energy chart (last 30 days)",
+      callback: async () => {
+        await this.refreshMoodNote();
+        await this.app.workspace.openLinkText(this.moodNotePath(), "", true);
+      },
+    });
+    this.addCommand({
+      id: "rescore-mood-current",
+      name: "Re-score mood and energy for the current entry",
+      callback: async () => {
+        const f = this.app.workspace.getActiveFile();
+        const entry = f && this.getEntries().find((e) => e.file.path === f.path);
+        if (!entry) return new Notice("Open a journal entry first.");
+        try {
+          const m = await this.scoreEntry(entry, true);
+          new Notice(m ? `Mood ${m.mood}/5 · Energy ${m.energy}/5 · ${m.emotions.join(", ")}` : "Couldn't score this entry.");
+        } catch (e) {
+          new Notice(`Scoring failed: ${(e as Error).message}`, 10000);
+        }
+      },
     });
     this.addCommand({
       id: "catch-up",
@@ -240,7 +279,7 @@ export default class JournalCompanion extends Plugin {
 
   /** Entry text with any previous AI replies removed. */
   async readEntry(e: Entry): Promise<string> {
-    return stripReplies(await this.app.vault.cachedRead(e.file));
+    return stripFrontmatter(stripReplies(await this.app.vault.cachedRead(e.file)));
   }
 
   async entryHasReply(f: TFile): Promise<boolean> {
@@ -293,6 +332,14 @@ export default class JournalCompanion extends Plugin {
         const base = force ? stripReplies(content) : content.trimEnd();
         return base + toCallout(reply, mo().format("YYYY-MM-DD HH:mm"), stats);
       });
+
+      if (this.settings.trackMood) {
+        try {
+          await this.scoreEntry(entry, force);
+        } catch (e) {
+          console.error("[journal-companion] mood scoring failed", e); // Never block a letter on this.
+        }
+      }
       return true;
     } finally {
       this.replying.delete(f.path);
@@ -420,7 +467,7 @@ export default class JournalCompanion extends Plugin {
     await this.writeSummary(
       this.summaryPath("Weekly", key),
       this.frontmatter("weekly-summary", key, entries.length) +
-        `# Week ${key} (${range})\n\n${body}\n\n---\n### Entries this week\n${links}\n`
+        `# Week ${key} (${range})\n\n${body}\n\n${await this.moodBlock(entries)}---\n### Entries this week\n${links}\n`
     );
     return body;
   }
@@ -445,7 +492,7 @@ export default class JournalCompanion extends Plugin {
     await this.writeSummary(
       this.summaryPath("Monthly", key),
       this.frontmatter("monthly-summary", key, entries.length) +
-        `# ${month.format("MMMM YYYY")}\n\n${body}\n\n---\n### Weekly summaries\n${links}\n`
+        `# ${month.format("MMMM YYYY")}\n\n${body}\n\n${await this.moodBlock(entries)}---\n### Weekly summaries\n${links}\n`
     );
   }
 
@@ -519,6 +566,74 @@ export default class JournalCompanion extends Plugin {
       pending.hide();
       new Notice(`Monthly summary failed: ${(e as Error).message}`, 10000);
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Mood & energy
+  // ---------------------------------------------------------------------------
+
+  /** Mood stored in an entry's frontmatter, read straight from the file so it's never stale. */
+  async readMood(file: TFile): Promise<Mood | null> {
+    const fm = (await this.app.vault.read(file)).match(/^---\n([\s\S]*?)\n---/);
+    if (!fm) return null;
+    try {
+      return toMood(parseYaml(fm[1]));
+    } catch {
+      return null;
+    }
+  }
+
+  /** Asks the small model for scores and saves them as properties on the entry. */
+  async scoreEntry(entry: Entry, force = false): Promise<Mood | null> {
+    if (!force && (await this.readMood(entry.file))) return null;
+    const text = await this.readEntry(entry);
+    if (text.length < 20) return null;
+
+    const mood = parseMoodJson(await this.ask(this.settings.dailyModel, MOOD_PROMPT, truncate(text), 200));
+    if (!mood) return null;
+
+    await this.app.fileManager.processFrontMatter(entry.file, (fm) => {
+      fm.mood = mood.mood;
+      fm.energy = mood.energy;
+      fm.emotions = mood.emotions;
+    });
+    return mood;
+  }
+
+  async moodRows(entries: Entry[]): Promise<MoodRow[]> {
+    const rows: MoodRow[] = [];
+    for (const e of entries) {
+      const m = await this.readMood(e.file);
+      if (m) rows.push({ ...m, label: e.date.format("M/D"), day: e.date.format("ddd M/D") });
+    }
+    return rows;
+  }
+
+  /** Mood chart and table for a summary, in the journal's language. */
+  async moodBlock(entries: Entry[]): Promise<string> {
+    if (!this.settings.trackMood) return "";
+    const rows = await this.moodRows(entries);
+    if (!rows.length) return "";
+    const sample = entries.length ? await this.readEntry(entries[entries.length - 1]) : "";
+    const chinese = isMostlyCJK(sample);
+    return `### ${chinese ? "心情与精力" : "Mood & energy"}\n\n${moodSection(rows, chinese)}\n\n`;
+  }
+
+  moodNotePath(): string {
+    return normalizePath(`${this.settings.summaryFolder}/Mood.md`);
+  }
+
+  /** Rewrites Summaries/Mood.md for the last 30 days. Local only; no API calls. */
+  async refreshMoodNote() {
+    if (!this.settings.trackMood) return;
+    const cutoff = mo().startOf("day").subtract(29, "days");
+    const recent = this.getEntries().filter((e) => !e.date.isBefore(cutoff));
+    const block = await this.moodBlock(recent);
+    const note =
+      `---\ntype: mood-chart\nupdated: ${mo().format("YYYY-MM-DD HH:mm")}\n---\n\n` +
+      `# Mood & energy · last 30 days\n\n` +
+      (block || "_No scored entries yet. Scores appear after an entry gets its letter._\n");
+    await this.writeSummary(this.moodNotePath(), note);
   }
 
   // ---------------------------------------------------------------------------
@@ -626,6 +741,17 @@ export default class JournalCompanion extends Plugin {
         }
       }
 
+      // Score finished days that don't have mood yet (includes older entries,
+      // once). Must run before summaries, which chart these scores.
+      if (this.settings.trackMood) {
+        let scored = 0;
+        for (const e of all) {
+          if (!e.date.isBefore(today)) continue;
+          if (await this.scoreEntry(e)) scored++;
+        }
+        if (scored) done.push(`mood ×${scored}`);
+      }
+
       if (this.settings.autoSummaries) {
         for (const [key, entries] of groupBy(all, (e) => e.date.format(WEEK_KEY))) {
           const weekEnd = entries[0].date.clone().endOf("isoWeek");
@@ -650,6 +776,8 @@ export default class JournalCompanion extends Plugin {
           if (await this.summarizeYear(year)) done.push(`year ${year}`);
         }
       }
+
+      await this.refreshMoodNote();
 
       if (done.length) new Notice(`✨ Done: ${done.join(", ")}`, 8000);
       else if (manual) new Notice("Everything is up to date.");

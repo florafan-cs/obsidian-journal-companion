@@ -8,6 +8,7 @@ Then, week by week, the pages add up:
 
 - 💌 **A letter for every entry.** Warm, playful, and specific to your day, never generic praise. Each one ends with a reflective question.
 - 🧠 **A friend who remembers.** A memory note keeps track of the people, pets, goals, and worries in your life, and grows a little every week. Letters draw on it, so they understand that "she" is your sister and that you've been thinking about this decision for a month. You can edit the note any time, and anything you pin there is never changed by the AI.
+- 📈 **Your mood, charted.** Each entry gets a mood and energy score (1–5) and a few feeling words, saved as properties you can correct. A 30-day chart lives in `Summaries/Mood.md`, and every weekly and monthly look-back includes its own.
 - 📝 **Your writing, counted.** Every letter opens with how many days you've journaled and how many words you've written in total, plus today's word count, writing time, and speed.
 - 📖 **A look back every week and every month.** How your mood moved, what you got done, the people and worries that kept coming up, and one or two small things to try next.
 - ✨ **A year-in-review.** The story of your year, with its hard seasons and bright ones, and a letter to the person you're becoming.
@@ -47,6 +48,8 @@ flowchart LR
 **Safe writes.** Replies are appended with `vault.process()`, which reads and writes the file atomically, so an edit you're making at the same moment isn't overwritten.
 
 **Memory the writer stays in control of.** Letters used to see only the previous two days. Now a memory note (`Summaries/Memory.md`) is built once from every entry, then revised after each weekly summary. The model returns the whole note each time, merging and dropping stale items, so it stays short instead of growing forever. The writer's 📌 Pinned section is split out and reattached by code rather than passed through the model, so the AI can read it but has no way to change it. This is covered by unit tests.
+
+**Mood as data, stored where the writer can see it.** A small, cheap model scores each entry and returns strict JSON, which is validated (integers 1–5, at most three feelings) before anything is saved. Scores are written as frontmatter properties through Obsidian's `processFrontMatter`, so they show up in the Properties panel, can be corrected by hand, and work with Bases and Dataview. Charts are built from those properties locally with no API calls: a Mermaid chart, plus a plain-text table with bar glyphs that still reads well anywhere Mermaid doesn't render.
 
 **Measuring writing time without a timer.** There's no start/stop button. The plugin listens to editor changes in journal notes and adds up the gaps between keystrokes, ignoring any pause longer than two minutes as time spent away. Time is stored per entry date, so coming back to an entry later adds to the same day. Word counts treat each Chinese character and each English word as one, which matches how people count mixed-language writing.
 
@@ -90,6 +93,8 @@ This plugin is not in the Obsidian community directory yet, so it has to be inst
 | Preview this month's summary mid-month | **Generate or refresh the monthly summary for the current entry's month** |
 | See or edit what Claude remembers | **Open the long-term memory note** |
 | Refresh memory now | **Update long-term memory from the last 7 days** |
+| See your mood trend | **Open the mood & energy chart (last 30 days)** |
+| Fix a score that feels off | Edit `mood` / `energy` in the entry's properties, or run **Re-score mood and energy for the current entry** |
 | Force a catch-up | **Catch up now: missing replies and summaries** |
 
 By default, entries from before today get their letter automatically the next time Obsidian opens. If you'd like today's entry answered once you stop typing, set **Reply to today's entry after N idle minutes** (for example, 30).
@@ -119,7 +124,6 @@ To try your changes, symlink or copy the repo into `<vault>/.obsidian/plugins/jo
 ## Roadmap
 
 - Store the API key in the OS keychain instead of `data.json`
-- Mood tracking across summaries, charted in a dashboard note
 - Support for other LLM providers behind the same interface
 
 ## License

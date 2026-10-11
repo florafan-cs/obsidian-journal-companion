@@ -137,3 +137,13 @@ Rules:
 (Things, people, and activities that clearly bring them joy or energy.)
 ## Recent chapter
 (2–4 lines on what life looks like lately.)`;
+
+export const MOOD_PROMPT = `Rate the writer's mood and energy in this journal entry, and name the main feelings.
+
+Scale for both:
+1 = very low (despair, exhausted) · 2 = low (down, tired) · 3 = mixed or neutral · 4 = good (content, active) · 5 = great (joyful, energized)
+
+Rules:
+- Judge the day as a whole from what the writer says, not from single words.
+- "emotions": 1–3 short feeling words in the journal's main language (e.g. 期待, 焦虑, 满足 for a Chinese entry).
+- Reply with JSON only, no other text: {"mood": <1-5>, "energy": <1-5>, "emotions": ["...", "..."]}`;
