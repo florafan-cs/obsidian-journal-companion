@@ -47,7 +47,7 @@ export const DEFAULT_SETTINGS: JournalCompanionSettings = {
   memoryPath: "Journal/Summaries/Memory.md",
   trackMood: true,
   organizeByMonth: true,
-  monthFolderFormat: "YYYY-MM M[月]",
+  monthFolderFormat: "M[月]-YYYY",
 };
 
 export class CompanionSettingTab extends PluginSettingTab {
@@ -138,8 +138,8 @@ export class CompanionSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Month folder name")
       .setDesc(
-        'Moment.js format. Default "YYYY-MM M[月]" gives "2026-09 9月" and sorts in order. ' +
-          'Other examples: "YYYY-MM", "YYYY/MM" (year then month), "M[月]-YYYY".'
+        'Moment.js format. Default "M[月]-YYYY" gives "9月-2026". For folders that stay in order across years, ' +
+          'put the year first: "YYYY-MM M[月]" (2026-09 9月), "YYYY-MM", or "YYYY/MM" (a folder per year).'
       )
       .addText((t) =>
         t.setValue(s.monthFolderFormat).onChange(async (v) => {
