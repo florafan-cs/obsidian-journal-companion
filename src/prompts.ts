@@ -18,6 +18,9 @@ const GROUNDING_RULE =
 const FORMAT_RULE =
   "Start directly with the first heading below. Do not add a title, preface, or any extra or empty headings.";
 
+const questionsSection = (count: string, scope: string) => `## 🤔 Questions for you
+(${count} deep, open-ended questions that invite the writer to reflect on themselves, as a numbered list with one question per line and nothing after each question. Base them on specific things from this ${scope}: tensions between what they say and what they do, choices they keep circling, values showing up in small moments, patterns they may not have noticed, and who they are becoming. Make each one personal and a little brave, not generic like "how do you feel?" and not answerable with yes or no. Ask with warmth and curiosity, never judgment. If the writer answered earlier questions, build on their answers instead of repeating them. Keep the 🤔 emoji at the start of this heading.)`;
+
 const BODY_RULE =
   "If the writer talks about weight, dieting, or appearance, respond with warmth and body-neutral kindness. " +
   "Never suggest calorie targets, weight goals, or diet plans.";
@@ -65,7 +68,8 @@ Use this markdown structure (level-2 headings), keeping each section concise:
 ## Try next week
 (1–2 small, concrete, doable suggestions.)
 ## A note to you
-(2–3 warm sentences specific to this week.)`;
+(2–3 warm sentences specific to this week.)
+${questionsSection("3", "week")}`;
 
 export const MONTHLY_SUMMARY_PROMPT = `You will receive one month of someone's journal entries in date order, and possibly last month's summary for comparison. Write a monthly review.
 
@@ -88,7 +92,8 @@ Use this markdown structure (level-2 headings):
 ## Suggested goals for next month
 (2–3 specific, achievable goals.)
 ## A note to you
-(One warm paragraph.)`;
+(One warm paragraph.)
+${questionsSection("3–4", "month")}`;
 
 export const YEARLY_SUMMARY_PROMPT = `You will receive the monthly summaries from one year of someone's journal. Write a year-in-review.
 
@@ -110,7 +115,8 @@ Use this markdown structure (level-2 headings):
 (Habits, ideas, relationships.)
 ## Worth letting go of or changing
 ## A letter to next year's you
-(One sincere, warm paragraph.)`;
+(One sincere, warm paragraph.)
+${questionsSection("5", "year")}`;
 
 export const MEMORY_UPDATE_PROMPT = `You maintain a long-term memory note about someone, built from their journal. A pen pal reads this note before replying to each new entry, so it should capture what a close friend would remember.
 
@@ -147,3 +153,7 @@ Rules:
 - Judge the day as a whole from what the writer says, not from single words.
 - "emotions": 1–3 short feeling words in the journal's main language (e.g. 期待, 焦虑, 满足 for a Chinese entry).
 - Reply with JSON only, no other text: {"mood": <1-5>, "energy": <1-5>, "emotions": ["...", "..."]}`;
+
+export const COVER_PHOTO_PROMPT = `You will see several photos from one day's journal entry, numbered in order, followed by the entry text. Choose the one photo that best captures the day: the moment, person, place, or feeling the writer cared about most. Prefer clear, meaningful photos over screenshots, receipts, or blurry shots.
+
+Reply with JSON only: {"index": <number of the chosen photo, starting at 1>}`;

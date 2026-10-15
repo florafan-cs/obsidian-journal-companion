@@ -3,6 +3,11 @@ import { requestUrl } from "obsidian";
 const API_URL = "https://api.anthropic.com/v1/messages";
 const API_VERSION = "2023-06-01";
 
+/** A message content block: text, or a base64 image for vision requests. */
+export type ContentBlock =
+  | { type: "text"; text: string }
+  | { type: "image"; source: { type: "base64"; media_type: string; data: string } };
+
 /**
  * Minimal client for the Anthropic Messages API.
  *
@@ -13,7 +18,7 @@ export async function callClaude(opts: {
   apiKey: string;
   model: string;
   system: string;
-  user: string;
+  user: string | ContentBlock[];
   maxTokens: number;
 }): Promise<string> {
   if (!opts.apiKey) {

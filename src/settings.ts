@@ -23,6 +23,8 @@ export interface JournalCompanionSettings {
   useMemory: boolean;
   memoryPath: string;
   trackMood: boolean;
+  arrangePhotos: boolean;
+  photoCalendar: boolean;
   organizeByMonth: boolean;
   /** Moment.js format for month folder names. */
   monthFolderFormat: string;
@@ -46,6 +48,8 @@ export const DEFAULT_SETTINGS: JournalCompanionSettings = {
   useMemory: true,
   memoryPath: "Journal/Summaries/Memory.md",
   trackMood: true,
+  arrangePhotos: true,
+  photoCalendar: true,
   organizeByMonth: true,
   monthFolderFormat: "M[月]-YYYY",
 };
@@ -261,6 +265,34 @@ export class CompanionSettingTab extends PluginSettingTab {
       .addToggle((t) =>
         t.setValue(s.trackMood).onChange(async (v) => {
           s.trackMood = v;
+          await save();
+        })
+      );
+
+    new Setting(containerEl).setName("Photos").setHeading();
+
+    new Setting(containerEl)
+      .setName("Arrange photos into grids")
+      .setDesc(
+        "When an entry has two or more photos in a row, gather them into a tidy grid. Your text is never changed. " +
+          "Applied to past entries automatically, or to any entry with the command."
+      )
+      .addToggle((t) =>
+        t.setValue(s.arrangePhotos).onChange(async (v) => {
+          s.arrangePhotos = v;
+          await save();
+        })
+      );
+
+    new Setting(containerEl)
+      .setName("Monthly photo calendar")
+      .setDesc(
+        "Keep a calendar for each month with every day's mood and a cover photo. When a day has several photos, " +
+          "Claude picks the one that best represents it (saved as the entry's cover property, which you can change)."
+      )
+      .addToggle((t) =>
+        t.setValue(s.photoCalendar).onChange(async (v) => {
+          s.photoCalendar = v;
           await save();
         })
       );

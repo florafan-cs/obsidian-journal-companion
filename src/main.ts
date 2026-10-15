@@ -8,8 +8,9 @@ import {
   normalizePath,
   parseYaml,
 } from "obsidian";
-import { callClaude } from "./claude";
+import { ContentBlock, callClaude } from "./claude";
 import {
+  COVER_PHOTO_PROMPT,
   DAILY_REPLY_PROMPT,
   MEMORY_UPDATE_PROMPT,
   MOOD_PROMPT,
@@ -19,11 +20,21 @@ import {
 } from "./prompts";
 import { CompanionSettingTab, DEFAULT_SETTINGS, JournalCompanionSettings } from "./settings";
 import {
+  CalendarDay,
   Mood,
+  addAnswerSlots,
+  arrangePhotos,
+  calendarMarkdown,
+  extractQuestions,
+  hasAnswers,
+  isImagePath,
+  parseChoice,
+  parseLink,
   isInside,
   monthFolderTarget,
   MoodRow,
   activeDelta,
+  moodEmoji,
   moodSection,
   parseMoodJson,
   toMood,
@@ -150,6 +161,37 @@ export default class JournalCompanion extends Plugin {
       },
     });
     this.addCommand({
+      id: "arrange-photos-current",
+      name: "Arrange photos in the current entry into a grid",
+      callback: async () => {
+        const f = this.app.workspace.getActiveFile();
+        if (!f || !this.isJournal(f)) return new Notice("Open a journal entry first.");
+        new Notice((await this.arrangeEntryPhotos(f)) ? "📷 Photos arranged." : "📷 No runs of two or more photos to arrange.");
+      },
+    });
+    this.addCommand({
+      id: "open-calendar",
+      name: "Open this month's photo calendar",
+      callback: async () => {
+        const name = await this.refreshCalendar(mo().format("YYYY-MM"));
+        await this.app.workspace.openLinkText(name, "", true);
+      },
+    });
+    this.addCommand({
+      id: "choose-cover-current",
+      name: "Choose a new cover photo for the current entry",
+      callback: async () => {
+        const f = this.app.workspace.getActiveFile();
+        const entry = f && this.getEntries().find((e) => e.file.path === f.path);
+        if (!entry) return new Notice("Open a journal entry first.");
+        try {
+          new Notice((await this.chooseCover(entry, true)) ? "🖼️ Cover photo updated." : "This entry has no photos.");
+        } catch (e) {
+          new Notice(`Choosing a cover failed: ${(e as Error).message}`, 10000);
+        }
+      },
+    });
+    this.addCommand({
       id: "catch-up",
       name: "Catch up now: missing replies and summaries",
       callback: () => this.runChecks(true),
@@ -256,7 +298,7 @@ export default class JournalCompanion extends Plugin {
   }
 
   /** Thin wrapper so the settings tab can test the connection. */
-  ask(model: string, system: string, user: string, maxTokens: number): Promise<string> {
+  ask(model: string, system: string, user: string | ContentBlock[], maxTokens: number): Promise<string> {
     return callClaude({ apiKey: this.settings.apiKey, model, system, user, maxTokens });
   }
 
@@ -483,6 +525,14 @@ export default class JournalCompanion extends Plugin {
     return s;
   }
 
+  /** Last period's questions, but only if the writer answered some of them. */
+  async previousAnswers(kind: "Weekly" | "Monthly", key: string): Promise<string> {
+    const f = this.app.vault.getAbstractFileByPath(this.summaryPath(kind, key));
+    if (!(f instanceof TFile)) return "";
+    const qa = extractQuestions(await this.app.vault.read(f));
+    return hasAnswers(qa) ? qa : "";
+  }
+
   async summarizeWeek(key: string, entries: Entry[]): Promise<string> {
     const start = entries[0].date.clone().startOf("isoWeek");
     const end = start.clone().endOf("isoWeek");
@@ -490,8 +540,10 @@ export default class JournalCompanion extends Plugin {
 
     const memory = await this.readMemory();
     const context = memory ? `[Long-term memory about the writer — background only]\n${truncate(memory, 4000)}\n\n` : "";
-    const user = `${context}${entries.length} entries from ${key} (${range}):\n\n${await this.entriesBlock(entries)}`;
-    const body = await this.ask(this.settings.summaryModel, WEEKLY_SUMMARY_PROMPT, user, 2500);
+    const prevQA = await this.previousAnswers("Weekly", start.clone().subtract(1, "week").format(WEEK_KEY));
+    const answers = prevQA ? `[Last week's questions and the writer's answers (✍️)]\n${prevQA}\n\n` : "";
+    const user = `${context}${answers}${entries.length} entries from ${key} (${range}):\n\n${await this.entriesBlock(entries)}`;
+    const body = addAnswerSlots(await this.ask(this.settings.summaryModel, WEEKLY_SUMMARY_PROMPT, user, 3000));
     const links = entries.map((e) => `- [[${e.file.basename}]]`).join("\n");
 
     await this.writeSummary(
@@ -510,19 +562,22 @@ export default class JournalCompanion extends Plugin {
     let user = "";
     const memory = await this.readMemory();
     if (memory) user += `[Long-term memory about the writer — background only]\n${truncate(memory, 4000)}\n\n`;
+    const prevQA = await this.previousAnswers("Monthly", prevKey);
+    if (prevQA) user += `[Last month's questions and the writer's answers (✍️)]\n${prevQA}\n\n`;
     if (prevFile instanceof TFile) {
       user += `[Last month's summary — for comparison only]\n${truncate(await this.app.vault.cachedRead(prevFile), 3000)}\n\n`;
     }
     user += `[${entries.length} entries from ${month.format("MMMM YYYY")}]\n\n${await this.entriesBlock(entries)}`;
 
-    const body = await this.ask(this.settings.summaryModel, MONTHLY_SUMMARY_PROMPT, user, 3500);
+    const body = addAnswerSlots(await this.ask(this.settings.summaryModel, MONTHLY_SUMMARY_PROMPT, user, 4000));
+    const calendar = this.settings.photoCalendar ? `### 📅\n\n![[${await this.refreshCalendar(key)}]]\n\n` : "";
     const weeks = [...new Set(entries.map((e) => e.date.format(WEEK_KEY)))];
     const links = weeks.map((w) => `- [[${w}]]`).join("\n");
 
     await this.writeSummary(
       this.summaryPath("Monthly", key),
       this.frontmatter("monthly-summary", key, entries.length) +
-        `# ${month.format("MMMM YYYY")}\n\n${body}\n\n${await this.moodBlock(entries)}---\n### Weekly summaries\n${links}\n`
+        `# ${month.format("MMMM YYYY")}\n\n${body}\n\n${await this.moodBlock(entries)}${calendar}---\n### Weekly summaries\n${links}\n`
     );
   }
 
@@ -541,7 +596,7 @@ export default class JournalCompanion extends Plugin {
       user += `===== ${m.key} =====\n${truncate(await this.app.vault.cachedRead(m.file), 6000)}\n\n`;
     }
 
-    const body = await this.ask(this.settings.summaryModel, YEARLY_SUMMARY_PROMPT, user, 5000);
+    const body = addAnswerSlots(await this.ask(this.settings.summaryModel, YEARLY_SUMMARY_PROMPT, user, 5500));
     const links = months.map((m) => `- [[${m.key}]]`).join("\n");
 
     await this.writeSummary(
@@ -599,18 +654,134 @@ export default class JournalCompanion extends Plugin {
   }
 
   // ---------------------------------------------------------------------------
+  // Photos & calendar
+  // ---------------------------------------------------------------------------
+
+  /** Image files embedded in an entry, in order. */
+  imagesIn(file: TFile): TFile[] {
+    const embeds = this.app.metadataCache.getFileCache(file)?.embeds ?? [];
+    const images: TFile[] = [];
+    for (const e of embeds) {
+      const target = this.app.metadataCache.getFirstLinkpathDest(e.link.split("|")[0], file.path);
+      if (target && isImagePath(target.path) && !images.includes(target)) images.push(target);
+    }
+    return images;
+  }
+
+  /** Groups runs of photos in an entry into a grid. Returns true if the entry changed. */
+  async arrangeEntryPhotos(file: TFile): Promise<boolean> {
+    // Check first, so untouched entries are never rewritten (or re-synced).
+    const current = await this.app.vault.read(file);
+    if (arrangePhotos(current) === current) return false;
+    let changed = false;
+    await this.app.vault.process(file, (text) => {
+      const next = arrangePhotos(text);
+      changed = next !== text;
+      return next;
+    });
+    return changed;
+  }
+
+  /**
+   * Downscales an image to a small JPEG for the vision model, which keeps
+   * requests cheap. Returns null for formats the renderer can't decode (HEIC).
+   */
+  async imageForModel(file: TFile, maxSide = 768): Promise<ContentBlock | null> {
+    try {
+      const bitmap = await createImageBitmap(new Blob([await this.app.vault.readBinary(file)]));
+      const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(bitmap.width * scale);
+      canvas.height = Math.round(bitmap.height * scale);
+      canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      const data = canvas.toDataURL("image/jpeg", 0.8).split(",")[1];
+      return { type: "image", source: { type: "base64", media_type: "image/jpeg", data } };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Picks the entry's cover photo and saves it as the `cover` property. One
+   * photo is used as-is; with several, the small model looks at them alongside
+   * the entry text and chooses. An existing cover is kept unless forced.
+   */
+  async chooseCover(entry: Entry, force = false): Promise<boolean> {
+    if (!force && parseLink((await this.readFrontmatter(entry.file)).cover)) return false;
+    const images = this.imagesIn(entry.file).slice(0, 8);
+    if (!images.length) return false;
+
+    let chosen = images[0];
+    if (images.length > 1) {
+      const content: ContentBlock[] = [];
+      const candidates: TFile[] = [];
+      for (const img of images) {
+        const block = await this.imageForModel(img);
+        if (!block) continue;
+        candidates.push(img);
+        content.push({ type: "text", text: `Photo ${candidates.length}:` }, block);
+      }
+      if (candidates.length > 1) {
+        content.push({ type: "text", text: `Journal entry:\n${truncate(await this.readEntry(entry), 2500)}` });
+        const idx = parseChoice(await this.ask(this.settings.dailyModel, COVER_PHOTO_PROMPT, content, 50), candidates.length);
+        chosen = candidates[idx ?? 0];
+      } else if (candidates.length === 1) {
+        chosen = candidates[0];
+      }
+    }
+
+    const link = this.app.metadataCache.fileToLinktext(chosen, entry.file.path, false);
+    await this.app.fileManager.processFrontMatter(entry.file, (fm) => {
+      fm.cover = `[[${link}]]`;
+    });
+    return true;
+  }
+
+  calendarPath(key: string): string {
+    return normalizePath(`${this.settings.summaryFolder}/Calendar/${key} Calendar.md`);
+  }
+
+  /** Rewrites the photo calendar for a month (YYYY-MM). Local only. Returns the note's link name. */
+  async refreshCalendar(key: string): Promise<string> {
+    const month = mo(key, "YYYY-MM");
+    const entries = this.getEntries().filter((e) => e.date.format("YYYY-MM") === key);
+    const days = new Map<number, CalendarDay>();
+    for (const e of entries) {
+      const fm = await this.readFrontmatter(e.file);
+      const mood = toMood(fm);
+      const coverLink = parseLink(fm.cover);
+      const cover = coverLink ? this.app.metadataCache.getFirstLinkpathDest(coverLink, e.file.path) : null;
+      days.set(e.date.date(), { link: e.file.basename, emoji: mood ? moodEmoji(mood.mood) : "", cover: cover?.path });
+    }
+    const sample = entries.length ? await this.readEntry(entries[entries.length - 1]) : "";
+    const chinese = entries.length ? isMostlyCJK(sample) : true;
+    const title = chinese ? `${month.format("YYYY年M月")} 日历` : `${month.format("MMMM YYYY")} Calendar`;
+    const note =
+      `---\ntype: photo-calendar\nperiod: ${key}\ncssclasses: [jc-calendar]\nupdated: ${mo().format("YYYY-MM-DD HH:mm")}\n---\n\n` +
+      `# ${title}\n\n${calendarMarkdown(month.year(), month.month() + 1, days, chinese)}\n`;
+    const path = this.calendarPath(key);
+    await this.writeSummary(path, note);
+    return `${key} Calendar`;
+  }
+
+  // ---------------------------------------------------------------------------
   // Mood & energy
   // ---------------------------------------------------------------------------
 
   /** Mood stored in an entry's frontmatter, read straight from the file so it's never stale. */
-  async readMood(file: TFile): Promise<Mood | null> {
+  /** An entry's frontmatter, read straight from the file so it's never stale. */
+  async readFrontmatter(file: TFile): Promise<Record<string, unknown>> {
     const fm = (await this.app.vault.read(file)).match(/^---\n([\s\S]*?)\n---/);
-    if (!fm) return null;
+    if (!fm) return {};
     try {
-      return toMood(parseYaml(fm[1]));
+      return (parseYaml(fm[1]) as Record<string, unknown>) ?? {};
     } catch {
-      return null;
+      return {};
     }
+  }
+
+  async readMood(file: TFile): Promise<Mood | null> {
+    return toMood(await this.readFrontmatter(file));
   }
 
   /** Asks the small model for scores and saves them as properties on the entry. */
@@ -771,6 +942,20 @@ export default class JournalCompanion extends Plugin {
         }
       }
 
+      // Photos on finished days: tidy grids (local), then a cover photo
+      // (vision call only when a day has several photos). Covers come before
+      // summaries, which embed the calendar.
+      if (this.settings.arrangePhotos) {
+        let arranged = 0;
+        for (const e of all) if (e.date.isBefore(today) && (await this.arrangeEntryPhotos(e.file))) arranged++;
+        if (arranged) done.push(`photos arranged ×${arranged}`);
+      }
+      if (this.settings.photoCalendar) {
+        let covers = 0;
+        for (const e of all) if (e.date.isBefore(today) && (await this.chooseCover(e))) covers++;
+        if (covers) done.push(`covers ×${covers}`);
+      }
+
       // Score finished days that don't have mood yet (includes older entries,
       // once). Must run before summaries, which chart these scores.
       if (this.settings.trackMood) {
@@ -808,6 +993,11 @@ export default class JournalCompanion extends Plugin {
       }
 
       await this.refreshMoodNote();
+      if (this.settings.photoCalendar && all.length) {
+        await this.refreshCalendar(today.format("YYYY-MM"));
+        const lastMonth = today.clone().subtract(1, "month").format("YYYY-MM");
+        if (all.some((e) => e.date.format("YYYY-MM") === lastMonth)) await this.refreshCalendar(lastMonth);
+      }
 
       // Last, so every step above has finished with the files where they were.
       if (this.settings.organizeByMonth) {

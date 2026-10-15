@@ -212,3 +212,90 @@ describe("folders", () => {
     expect(monthFolderTarget("", "2026-09", "x.md")).toBe("2026-09/x.md");
   });
 });
+
+import { addAnswerSlots, arrangePhotos, calendarMarkdown, extractQuestions, hasAnswers, parseChoice, parseLink } from "../src/utils";
+
+describe("arrangePhotos", () => {
+  it("gathers consecutive photos into a grid and leaves text alone", () => {
+    const before = "Went to the park.\n\n![[a.jpg]]\n![[b.png|300]]\n\n![[c.jpeg]]\n\nSo nice.";
+    expect(arrangePhotos(before)).toBe("Went to the park.\n\n> [!photos]\n> ![[a.jpg]] ![[b.png|300]] ![[c.jpeg]]\n\nSo nice.");
+  });
+
+  it("handles several photos on one line and Markdown image syntax", () => {
+    expect(arrangePhotos("![[a.jpg]] ![](img/b.webp)")).toBe("> [!photos]\n> ![[a.jpg]] ![](img/b.webp)");
+  });
+
+  it("leaves single photos, mixed lines, code and frontmatter as they are", () => {
+    const text = [
+      "---",
+      "cover: \"[[a.jpg]]\"",
+      "---",
+      "![[a.jpg]]",
+      "text",
+      "Look ![[b.jpg]] here",
+      "![[c.jpg]]",
+      "```",
+      "![[d.jpg]]",
+      "![[e.jpg]]",
+      "```",
+    ].join("\n");
+    expect(arrangePhotos(text)).toBe(text);
+  });
+
+  it("is idempotent and ignores non-image embeds", () => {
+    const once = arrangePhotos("![[a.jpg]]\n![[b.jpg]]");
+    expect(arrangePhotos(once)).toBe(once);
+    expect(arrangePhotos("![[note]]\n![[other.pdf]]")).toBe("![[note]]\n![[other.pdf]]");
+  });
+});
+
+describe("photo helpers", () => {
+  it("parses cover links and model choices", () => {
+    expect(parseLink("[[photos/cat.jpg]]")).toBe("photos/cat.jpg");
+    expect(parseLink("[[cat.jpg|alias]]")).toBe("cat.jpg");
+    expect(parseLink("cat.jpg")).toBe("cat.jpg");
+    expect(parseLink(undefined)).toBeNull();
+    expect(parseChoice('{"index": 2}', 3)).toBe(1);
+    expect(parseChoice('{"index": 5}', 3)).toBeNull();
+    expect(parseChoice("I like the second one", 3)).toBeNull();
+  });
+});
+
+describe("calendarMarkdown", () => {
+  // October 2026 starts on a Thursday and has 31 days.
+  const days = new Map([[5, { link: "2026-10-05 Mon.", emoji: "🙂", cover: "Photos/park.jpg" }], [7, { link: "2026-10-07 Wed.", emoji: "😐" }]]);
+  const md = calendarMarkdown(2026, 10, days, true);
+  const rows = md.split("\n");
+
+  it("starts on Monday with the right offset and covers the whole month", () => {
+    expect(rows[0]).toBe("| 一 | 二 | 三 | 四 | 五 | 六 | 日 |");
+    expect(rows[2]).toBe("|   |   |   | 1 | 2 | 3 | 4 |");
+    expect(rows.length).toBe(2 + 5);
+    expect(rows[rows.length - 1]).toContain("| 31 |");
+  });
+
+  it("links entries, shows mood and cover, and escapes pipes inside the table", () => {
+    expect(md).toContain("[[2026-10-05 Mon.\\|5]] 🙂<br>![[Photos/park.jpg\\|200]]");
+    expect(md).toContain("[[2026-10-07 Wed.\\|7]] 😐 |");
+  });
+});
+
+describe("reflective questions", () => {
+  const body = "## A note to you\nYou did great.\n## 🤔 Questions for you\n1. What are you avoiding?\n2. 你在害怕什么？\n";
+
+  it("adds an answer line under each question, only in the 🤔 section", () => {
+    const withSlots = addAnswerSlots("## Try next week\n1. Sleep earlier\n" + body);
+    expect(withSlots).toContain("1. Sleep earlier\n## A note");
+    expect(withSlots).toContain("1. What are you avoiding?\n   - ✍️ \n2. 你在害怕什么？\n   - ✍️ ");
+  });
+
+  it("extracts the questions section and detects answers", () => {
+    const note = `# Week\n${addAnswerSlots(body)}\n---\n### Entries this week\n- [[x]]`;
+    const qa = extractQuestions(note);
+    expect(qa.startsWith("## 🤔 Questions for you")).toBe(true);
+    expect(qa).not.toContain("Entries this week");
+    expect(hasAnswers(qa)).toBe(false);
+    expect(hasAnswers(qa.replace("✍️ ", "✍️ Probably the internship emails"))).toBe(true);
+    expect(extractQuestions("no questions")).toBe("");
+  });
+});

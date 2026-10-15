@@ -1,0 +1,55 @@
+/* Journal Companion */
+
+/* Photo grids: a [!photos] callout holding two or more image embeds. */
+.callout[data-callout="photos"] {
+  --callout-color: 236, 72, 153;
+  --callout-icon: lucide-image;
+  padding: 6px;
+  background: transparent;
+  border: none;
+}
+.callout[data-callout="photos"] > .callout-title {
+  display: none;
+}
+.callout[data-callout="photos"] .callout-content {
+  padding: 0;
+}
+.callout[data-callout="photos"] .callout-content > p {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 6px;
+  margin: 0;
+}
+.callout[data-callout="photos"] .callout-content > p > br {
+  display: none;
+}
+.callout[data-callout="photos"] .internal-embed,
+.callout[data-callout="photos"] img {
+  width: 100%;
+  margin: 0;
+}
+.callout[data-callout="photos"] img {
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+/* Monthly photo calendar (notes with cssclasses: jc-calendar). */
+.jc-calendar table {
+  width: 100%;
+  table-layout: fixed;
+}
+.jc-calendar th,
+.jc-calendar td {
+  vertical-align: top;
+  text-align: left;
+  padding: 4px;
+  font-size: 0.9em;
+}
+.jc-calendar td img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 6px;
+  margin-top: 4px;
+}

@@ -304,3 +304,174 @@ export function monthFolderTarget(journalFolder: string, monthFolder: string, fi
     .filter(Boolean)
     .join("/");
 }
+
+// ---------------------------------------------------------------------------
+// Photos
+// ---------------------------------------------------------------------------
+
+export const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "gif", "webp", "heic", "heif", "bmp", "avif", "svg"];
+
+const EXT = IMAGE_EXTENSIONS.join("|");
+const IMAGE_EMBED_RE = new RegExp(
+  `!\\[\\[[^\\]|]+?\\.(?:${EXT})(?:\\|[^\\]]*)?\\]\\]|!\\[[^\\]]*\\]\\([^)]+?\\.(?:${EXT})\\)`,
+  "gi"
+);
+
+export const isImagePath = (path: string) => new RegExp(`\\.(?:${EXT})$`, "i").test(path);
+
+/** Image embeds on a line, or null if the line holds anything besides images. */
+function imageOnlyLine(line: string): string[] | null {
+  const embeds = line.match(IMAGE_EMBED_RE);
+  if (!embeds) return null;
+  return line.replace(IMAGE_EMBED_RE, "").trim() === "" ? embeds : null;
+}
+
+/**
+ * Gathers runs of two or more photos (on consecutive lines, blank lines
+ * allowed between them) into a `[!photos]` callout, which the plugin's CSS
+ * lays out as a grid. Text is never touched, single photos stay where they
+ * are, and frontmatter, code blocks and existing callouts are left alone.
+ * Running it twice changes nothing.
+ */
+export function arrangePhotos(text: string): string {
+  const lines = text.split("\n");
+  const out: string[] = [];
+  let i = 0;
+
+  // Frontmatter passes through untouched.
+  if (lines[0] === "---") {
+    const end = lines.indexOf("---", 1);
+    if (end > 0) {
+      out.push(...lines.slice(0, end + 1));
+      i = end + 1;
+    }
+  }
+
+  let inFence = false;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (/^\s*(```|~~~)/.test(line)) inFence = !inFence;
+    const first = inFence ? null : imageOnlyLine(line);
+    if (!first) {
+      out.push(line);
+      i++;
+      continue;
+    }
+
+    // Collect the run: image-only lines, possibly separated by blank lines.
+    const embeds = [...first];
+    let j = i + 1;
+    let lastImageLine = i;
+    while (j < lines.length) {
+      if (lines[j].trim() === "") {
+        j++;
+        continue;
+      }
+      const more = imageOnlyLine(lines[j]);
+      if (!more) break;
+      embeds.push(...more);
+      lastImageLine = j;
+      j++;
+    }
+
+    if (embeds.length >= 2) {
+      out.push("> [!photos]", `> ${embeds.join(" ")}`);
+    } else {
+      out.push(...lines.slice(i, lastImageLine + 1));
+    }
+    i = lastImageLine + 1;
+  }
+  return out.join("\n");
+}
+
+/** Pulls the file path out of a frontmatter link like "[[photos/cat.jpg]]". */
+export function parseLink(value: unknown): string | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const m = value.match(/^\s*!?\[\[([^\]|]+)(?:\|[^\]]*)?\]\]\s*$/);
+  return (m ? m[1] : value).trim();
+}
+
+/** Reads `{"index": n}` (1-based) from a model reply and returns a 0-based index. */
+export function parseChoice(text: string, count: number): number | null {
+  const m = text.match(/"index"\s*:\s*(\d+)/);
+  if (!m) return null;
+  const n = Number(m[1]);
+  return n >= 1 && n <= count ? n - 1 : null;
+}
+
+// ---------------------------------------------------------------------------
+// Monthly photo calendar
+// ---------------------------------------------------------------------------
+
+export interface CalendarDay {
+  /** Link target for the entry (its file name without extension). */
+  link: string;
+  emoji: string;
+  /** Vault path of the cover photo, if any. */
+  cover?: string;
+}
+
+/**
+ * A Monday-first month grid as a Markdown table. Each day with an entry links
+ * to it and shows its mood emoji and cover photo. Pipes inside wikilinks are
+ * escaped so they don't split table cells.
+ */
+export function calendarMarkdown(
+  year: number,
+  month: number, // 1–12
+  days: Map<number, CalendarDay>,
+  chinese: boolean
+): string {
+  const header = chinese ? ["一", "二", "三", "四", "五", "六", "日"] : ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const offset = (new Date(year, month - 1, 1).getDay() + 6) % 7;
+  const daysInMonth = new Date(year, month, 0).getDate();
+
+  const cells: string[] = Array(offset).fill(" ");
+  for (let d = 1; d <= daysInMonth; d++) {
+    const day = days.get(d);
+    if (!day) {
+      cells.push(String(d));
+      continue;
+    }
+    let cell = `[[${day.link}\\|${d}]] ${day.emoji}`.trim();
+    if (day.cover) cell += `<br>![[${day.cover}\\|200]]`;
+    cells.push(cell);
+  }
+  while (cells.length % 7) cells.push(" ");
+
+  const rows: string[] = [`| ${header.join(" | ")} |`, `|${" --- |".repeat(7)}`];
+  for (let r = 0; r < cells.length; r += 7) rows.push(`| ${cells.slice(r, r + 7).join(" | ")} |`);
+  return rows.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Reflective questions in summaries
+// ---------------------------------------------------------------------------
+
+const QUESTIONS_HEADING_RE = /^## 🤔/;
+const ANSWER_SLOT = "   - ✍️ ";
+
+/** Adds an answer line under each numbered question in the 🤔 section. */
+export function addAnswerSlots(body: string): string {
+  const out: string[] = [];
+  let inQuestions = false;
+  for (const line of body.split("\n")) {
+    if (line.startsWith("## ")) inQuestions = QUESTIONS_HEADING_RE.test(line);
+    out.push(line);
+    if (inQuestions && /^\s*\d+[.)、．]\s*\S/.test(line)) out.push(ANSWER_SLOT);
+  }
+  return out.join("\n");
+}
+
+/** The 🤔 questions section of a summary (with any answers), or "". */
+export function extractQuestions(text: string): string {
+  const lines = text.split("\n");
+  const start = lines.findIndex((l) => QUESTIONS_HEADING_RE.test(l));
+  if (start < 0) return "";
+  let end = start + 1;
+  while (end < lines.length && !/^(#{1,3} |---\s*$)/.test(lines[end])) end++;
+  return lines.slice(start, end).join("\n").trim();
+}
+
+/** True if at least one answer line has been filled in. */
+export const hasAnswers = (section: string) => /✍️[ \t]*\S/.test(section);

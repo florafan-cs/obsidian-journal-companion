@@ -9,9 +9,10 @@ Then, week by week, the pages add up:
 - 💌 **A letter for every entry.** Warm, playful, and specific to your day, never generic praise. Each one ends with a reflective question.
 - 🧠 **A friend who remembers.** A memory note keeps track of the people, pets, goals, and worries in your life, and grows a little every week. Letters draw on it, so they understand that "she" is your sister and that you've been thinking about this decision for a month. You can edit the note any time, and anything you pin there is never changed by the AI.
 - 📈 **Your mood, charted.** Each entry gets a mood and energy score (1–5) and a few feeling words, saved as properties you can correct. A 30-day chart lives in `Summaries/Mood.md`, and every weekly and monthly look-back includes its own.
+- 📷 **Photos, laid out and remembered.** Two or more photos in a row become a neat grid, without touching a word you wrote. Every month gets a photo calendar: one square per day with its mood and the photo that best captures it, chosen by Claude when there are several.
 - 📁 **A tidy shelf.** Past entries are filed into a folder per month (`9月-2026`, `10月-2026`, …), with links kept intact.
 - 📝 **Your writing, counted.** Every letter opens with how many days you've journaled and how many words you've written in total, plus today's word count, writing time, and speed.
-- 📖 **A look back every week and every month.** How your mood moved, what you got done, the people and worries that kept coming up, and one or two small things to try next.
+- 📖 **A look back every week and every month.** How your mood moved, what you got done, the people and worries that kept coming up, and one or two small things to try next. Each one ends with a few deep questions about yourself, with space to write your answers, and the next look-back picks up where your answers left off.
 - ✨ **A year-in-review.** The story of your year, with its hard seasons and bright ones, and a letter to the person you're becoming.
 
 Over time you end up with a book of your own life, and a companion who knows it as well as you do.
@@ -52,6 +53,10 @@ flowchart LR
 
 **Mood as data, stored where the writer can see it.** A small, cheap model scores each entry and returns strict JSON, which is validated (integers 1–5, at most three feelings) before anything is saved. Scores are written as frontmatter properties through Obsidian's `processFrontMatter`, so they show up in the Properties panel, can be corrected by hand, and work with Bases and Dataview. Charts are built from those properties locally with no API calls: a Mermaid chart, plus a plain-text table with bar glyphs that still reads well anywhere Mermaid doesn't render.
 
+**Photos without rewriting the writer's words.** Layout is deterministic, not generative: `arrangePhotos()` only regroups lines that contain nothing but image embeds into a `[!photos]` callout, which the plugin's CSS turns into a grid. It skips frontmatter, code blocks and mixed lines, and running it twice changes nothing. Choosing a cover photo is the only step that uses vision. Images are downscaled in the renderer to 768 px JPEGs before upload to keep requests cheap. The choice is saved as a `cover` property, which the monthly calendar (a Markdown table with escaped wikilinks, styled through `cssclasses`) reads back.
+
+**Questions that carry over.** Summaries end with a 🤔 section of reflective questions, and the plugin adds a ✍️ answer line under each one. When the next weekly or monthly summary is written, last period's questions are passed back in, but only if the writer actually answered something, so the follow-up questions can build on those answers.
+
 **Measuring writing time without a timer.** There's no start/stop button. The plugin listens to editor changes in journal notes and adds up the gaps between keystrokes, ignoring any pause longer than two minutes as time spent away. Time is stored per entry date, so coming back to an entry later adds to the same day. Word counts treat each Chinese character and each English word as one, which matches how people count mixed-language writing.
 
 **Right-sized models.** Daily letters are short and frequent, so they use a small, fast model (Claude Haiku). Summaries run a few times a month and need more synthesis, so they use a larger model (Claude Sonnet). Both are configurable.
@@ -73,8 +78,8 @@ tests/
 
 This plugin is not in the Obsidian community directory yet, so it has to be installed manually.
 
-1. Build the plugin (see [Development](#development)), or download `main.js` and `manifest.json` from a release.
-2. Copy both files to `<your vault>/.obsidian/plugins/journal-companion/`.
+1. Build the plugin (see [Development](#development)), or download `main.js`, `manifest.json` and `styles.css` from a release.
+2. Copy the three files to `<your vault>/.obsidian/plugins/journal-companion/`.
 3. In Obsidian, open **Settings → Community plugins**, turn off Restricted mode, and enable **Journal Companion**.
 
 ### Getting an API key
@@ -97,6 +102,9 @@ This plugin is not in the Obsidian community directory yet, so it has to be inst
 | See your mood trend | **Open the mood & energy chart (last 30 days)** |
 | Fix a score that feels off | Edit `mood` / `energy` in the entry's properties, or run **Re-score mood and energy for the current entry** |
 | File entries into month folders now | **Organize past entries into monthly folders now** |
+| Tidy the photos in an entry | **Arrange photos in the current entry into a grid** |
+| See this month as a photo calendar | **Open this month's photo calendar** |
+| Pick a different cover photo | Edit the entry's `cover` property, or run **Choose a new cover photo for the current entry** |
 | Force a catch-up | **Catch up now: missing replies and summaries** |
 
 By default, entries from before today get their letter automatically the next time Obsidian opens. If you'd like today's entry answered once you stop typing, set **Reply to today's entry after N idle minutes** (for example, 30).
