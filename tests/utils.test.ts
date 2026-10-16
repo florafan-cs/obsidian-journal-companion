@@ -299,3 +299,15 @@ describe("reflective questions", () => {
     expect(extractQuestions("no questions")).toBe("");
   });
 });
+
+import { feelingsInLanguage } from "../src/utils";
+
+describe("feelingsInLanguage", () => {
+  it("checks that feeling words match the journal's language", () => {
+    expect(feelingsInLanguage(["沉思", "担忧"], true)).toBe(true);
+    expect(feelingsInLanguage(["thoughtful", "担忧"], true)).toBe(false);
+    expect(feelingsInLanguage(["hopeful", "calm"], false)).toBe(true);
+    expect(feelingsInLanguage(["期待"], false)).toBe(false);
+    expect(feelingsInLanguage([], true)).toBe(true);
+  });
+});

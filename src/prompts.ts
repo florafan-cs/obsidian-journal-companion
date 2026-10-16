@@ -151,9 +151,15 @@ Scale for both:
 
 Rules:
 - Judge the day as a whole from what the writer says, not from single words.
-- "emotions": 1–3 short feeling words in the journal's main language (e.g. 期待, 焦虑, 满足 for a Chinese entry).
+- "emotions": 1–3 short feeling words, in the language named at the end of these instructions.
 - Reply with JSON only, no other text: {"mood": <1-5>, "energy": <1-5>, "emotions": ["...", "..."]}`;
 
 export const COVER_PHOTO_PROMPT = `You will see several photos from one day's journal entry, numbered in order, followed by the entry text. Choose the one photo that best captures the day: the moment, person, place, or feeling the writer cared about most. Prefer clear, meaningful photos over screenshots, receipts, or blurry shots.
 
 Reply with JSON only: {"index": <number of the chosen photo, starting at 1>}`;
+
+/** Appended to MOOD_PROMPT. The language is decided in code, not left to the model. */
+export const moodLanguageRule = (chinese: boolean) =>
+  chinese
+    ? "\n\nLanguage for emotions: Simplified Chinese (简体中文), e.g. 期待, 焦虑, 满足, even if the entry contains English words or titles."
+    : "\n\nLanguage for emotions: English, e.g. hopeful, anxious, content.";

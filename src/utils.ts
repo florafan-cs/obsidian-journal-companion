@@ -475,3 +475,9 @@ export function extractQuestions(text: string): string {
 
 /** True if at least one answer line has been filled in. */
 export const hasAnswers = (section: string) => /✍️[ \t]*\S/.test(section);
+
+/** True if every feeling word is in the expected language (any CJK character counts as Chinese). */
+export function feelingsInLanguage(emotions: string[], chinese: boolean): boolean {
+  const cjk = /[\u3400-\u9fff]/;
+  return emotions.every((e) => cjk.test(e) === chinese);
+}

@@ -14,6 +14,7 @@ import {
   DAILY_REPLY_PROMPT,
   MEMORY_UPDATE_PROMPT,
   MOOD_PROMPT,
+  moodLanguageRule,
   MONTHLY_SUMMARY_PROMPT,
   WEEKLY_SUMMARY_PROMPT,
   YEARLY_SUMMARY_PROMPT,
@@ -26,6 +27,7 @@ import {
   arrangePhotos,
   calendarMarkdown,
   extractQuestions,
+  feelingsInLanguage,
   hasAnswers,
   isImagePath,
   parseChoice,
@@ -790,7 +792,17 @@ export default class JournalCompanion extends Plugin {
     const text = await this.readEntry(entry);
     if (text.length < 20) return null;
 
-    const mood = parseMoodJson(await this.ask(this.settings.dailyModel, MOOD_PROMPT, truncate(text), 200));
+    // Decide the language in code: the model sometimes answers in English when a
+    // Chinese entry starts with an English title.
+    const chinese = isMostlyCJK(text);
+    const system = MOOD_PROMPT + moodLanguageRule(chinese);
+    let mood = parseMoodJson(await this.ask(this.settings.dailyModel, system, truncate(text), 200));
+    if (mood && !feelingsInLanguage(mood.emotions, chinese)) {
+      const retry = parseMoodJson(await this.ask(this.settings.dailyModel, system, truncate(text), 200));
+      if (retry) mood = retry;
+      // Still wrong: keep the scores, and only the words in the right language.
+      mood = { ...mood, emotions: mood.emotions.filter((e) => feelingsInLanguage([e], chinese)) };
+    }
     if (!mood) return null;
 
     await this.app.fileManager.processFrontMatter(entry.file, (fm) => {
